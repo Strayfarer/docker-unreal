@@ -1,0 +1,7 @@
+**
+!common/
+!common/**
+!windows/
+!windows/**
+!unreal.tar
+!unreal-dependencies.xml

@@ -1,0 +1,4 @@
+*.log
+/unreal/
+/unreal.tar
+/unreal-dependencies.xml
