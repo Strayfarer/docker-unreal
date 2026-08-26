@@ -28,7 +28,7 @@ properties([
 
 def hosts = ['Dende']
 def dockerNamespace = params.DOCKER_NAMESPACE ?: 'faulo'
-def unrealVersions = ['5.0']
+def unrealVersions = ['5.0', '5.7']
 
 stage('Integration Tests') {
     for (def host in hosts) {
