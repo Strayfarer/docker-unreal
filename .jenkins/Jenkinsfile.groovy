@@ -5,11 +5,11 @@ def assertValue(actual, expected, description) {
 }
 
 def candidateImage() {
-    return "$DOCKER_NAMESPACE/$DOCKER_IMAGE:$UNREAL_VERSION"
+    return "$DOCKER_NAMESPACE/$DOCKER_IMAGE"
 }
 
 def testImage() {
-    docker.image(candidateImage()).inside() {
+    docker.image(candidateImage()).inside('-v unreal-binaries:C:/unreal/binaries -v unreal-sources:C:/unreal/sources') {
         exec 'Build -Help'
     }
 }
@@ -29,6 +29,8 @@ properties([
 def hosts = ['Dende']
 def dockerNamespace = params.DOCKER_NAMESPACE ?: 'faulo'
 def unrealVersions = ['5.0', '5.7']
+def unrealSource = 'https://github.com/EpicGames/UnrealEngine'
+def unrealCredentials = 'Faulo-GitHub'
 
 stage('Integration Tests') {
     for (def host in hosts) {
@@ -47,13 +49,14 @@ stage('Integration Tests') {
                         ) {
                             withEnv([
                                 "DOCKER_NAMESPACE=${dockerNamespace}",
-                                "UNREAL_VERSION=${unrealVersion}"
+                                "UNREAL_VERSION=${unrealVersion}",
+                                "UNREAL_SOURCE=${unrealSource}"
                             ]) {
                                 withEnvFile {
+                                 withCredentials([usernamePassword(credentialsId: unrealCredentials, usernameVariable: 'UNREAL_CREDENTIALS_USR', passwordVariable: 'UNREAL_CREDENTIALS_PSW')]) {
                                     echo "Testing ${candidateImage()} with Unreal v${unrealVersion} on ${host}"
                                     testImage()
-                                }
-                            }
+                            }}}
                         }
                     }
                 }
