@@ -9,7 +9,7 @@ def candidateImage() {
 }
 
 def testImage() {
-    docker.image(candidateImage()).inside('-v unreal-binaries:C:/unreal/binaries -v unreal-sources:C:/unreal/sources') {
+    docker.image(candidateImage()).inside('-v unreal-binaries:C:/unreal/binaries -v unreal-cache:C:/unreal/cache -v unreal-sources:C:/unreal/sources') {
         exec 'Build -Help'
     }
 }
@@ -28,7 +28,7 @@ properties([
 
 def hosts = ['Dende']
 def dockerNamespace = params.DOCKER_NAMESPACE ?: 'faulo'
-def unrealVersions = ['5.0', '5.7']
+def unrealVersions = ['5.0', '5.6', '5.7']
 def unrealSource = 'https://github.com/EpicGames/UnrealEngine'
 def unrealCredentials = 'Faulo-GitHub'
 

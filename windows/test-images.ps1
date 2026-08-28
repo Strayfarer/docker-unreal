@@ -46,6 +46,7 @@ foreach ($version in $versions) {
         --env UNREAL_CREDENTIALS_USR `
         --env UNREAL_CREDENTIALS_PSW `
         --volume 'unreal-binaries:C:/unreal/binaries' `
+        --volume 'unreal-cache:C:/unreal/cache' `
         --volume 'unreal-sources:C:/unreal/sources' `
         $image `
         @testCommand
