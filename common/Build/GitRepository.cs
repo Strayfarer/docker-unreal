@@ -50,23 +50,85 @@ sealed partial class GitRepository : IRepository {
             throw new InvalidOperationException("Unreal source checkout uses a different origin. Expected " + source + ", found " + configuredSource);
         }
 
-        string existingCommit = RunGitCapture(destination, ["rev-parse", "HEAD"]).StandardOutput.Trim().ToLowerInvariant();
-        if (existingCommit == commit) {
-            Log("reusing Unreal source worktree at commit " + commit);
-            return destination;
+        string checkout = PrimaryWorktreeMatches(destination, version)
+            ? destination
+            : WorktreeDirectory(destination, version);
+        if (!Directory.Exists(checkout)) {
+            EnsureCommit(destination, commit);
+            CreateWorktree(destination, checkout, commit);
+            return checkout;
         }
 
-        RunGit(destination, ["fetch", "--depth", "1", "--no-tags", "origin", commit]);
-        RunGit(destination, ["checkout", "--force", "-B", version.ToString(), commit]);
-        RunGit(destination, ["reset", "--hard", commit]);
-        RunGit(destination, ["clean", "-ffdx"]);
-        string actualCommit = RunGitCapture(destination, ["rev-parse", "HEAD"]).StandardOutput.Trim().ToLowerInvariant();
+        ValidateWorktree(destination, checkout);
+        string existingCommit = RunGitCapture(checkout, ["rev-parse", "HEAD"]).StandardOutput.Trim().ToLowerInvariant();
+        if (existingCommit == commit) {
+            RunGit(checkout, ["reset", "--hard", commit]);
+            Log("reusing Unreal " + version + " source worktree at commit " + commit);
+            return checkout;
+        }
+
+        EnsureCommit(destination, commit);
+        if (PathsEqual(checkout, destination)) {
+            RunGit(checkout, ["checkout", "--force", "-B", version.ToString(), commit]);
+        } else {
+            RunGit(checkout, ["checkout", "--force", "--detach", commit]);
+        }
+        RunGit(checkout, ["reset", "--hard", commit]);
+        RunGit(checkout, ["clean", "-ffdx"]);
+        string actualCommit = RunGitCapture(checkout, ["rev-parse", "HEAD"]).StandardOutput.Trim().ToLowerInvariant();
         if (actualCommit != commit) {
             throw new InvalidOperationException("Unreal source checkout resolved to " + actualCommit + " instead of " + commit);
         }
 
-        return destination;
+        return checkout;
     }
+
+    bool PrimaryWorktreeMatches(string repository, UnrealVersion version) {
+        var buildVersion = BuildVersion.Read(repository);
+        return version.Matches(buildVersion);
+    }
+
+    void EnsureCommit(string repository, string commit) {
+        var existing = RunGitCapture(repository, ["cat-file", "-e", commit + "^{commit}"], false);
+        if (existing.ExitCode != 0) {
+            RunGit(repository, ["fetch", "--depth", "1", "--no-tags", "origin", commit]);
+        }
+    }
+
+    void CreateWorktree(string repository, string worktree, string commit) {
+        string worktreeRoot = Path.GetDirectoryName(worktree)!;
+        Directory.CreateDirectory(worktreeRoot);
+        RunGit(repository, ["worktree", "prune"]);
+        if (Directory.Exists(worktree)) {
+            throw new InvalidOperationException("Unreal worktree directory is not registered with the shared repository: " + worktree);
+        }
+
+        RunGit(repository, ["worktree", "add", "--force", "--detach", worktree, commit]);
+        Log("created Unreal source worktree " + worktree + " at commit " + commit);
+    }
+
+    void ValidateWorktree(string repository, string worktree) {
+        string worktreeGit = Path.Combine(worktree, ".git");
+        if (PathsEqual(repository, worktree)) {
+            if (!Directory.Exists(worktreeGit)) {
+                throw new InvalidOperationException("Unreal source directory is not a Git checkout: " + worktree);
+            }
+            return;
+        }
+
+        if (!File.Exists(worktreeGit)) {
+            throw new InvalidOperationException("Unreal source worktree is not linked to the shared repository: " + worktree);
+        }
+
+        string commonDirectory = RunGitCapture(worktree, ["rev-parse", "--path-format=absolute", "--git-common-dir"]).StandardOutput.Trim();
+        string expected = Path.Combine(repository, ".git");
+        if (!PathsEqual(commonDirectory, expected)) {
+            throw new InvalidOperationException("Unreal source worktree uses a different shared repository. Expected " + expected + ", found " + commonDirectory);
+        }
+    }
+
+    static string WorktreeDirectory(string repository, UnrealVersion version) =>
+        Path.Combine(Path.GetDirectoryName(repository)!, "worktrees", version.ToString());
 
     void Clone(string source, UnrealVersion version, string destination) {
         string parent = Path.GetDirectoryName(destination)!;
@@ -97,12 +159,12 @@ sealed partial class GitRepository : IRepository {
         ProcessRunner.Run(start, true);
     }
 
-    ProcessResult RunGitCapture(string workingDirectory, IEnumerable<string> arguments) {
+    ProcessResult RunGitCapture(string workingDirectory, IEnumerable<string> arguments, bool requireSuccess = true) {
         string[] completeArguments = GitArguments(arguments).ToArray();
         Log("git " + string.Join(' ', completeArguments));
         var start = ProcessRunner.CreateStartInfo("git.exe", completeArguments, workingDirectory);
         ConfigureAuthentication(start);
-        return ProcessRunner.Capture(start, true);
+        return ProcessRunner.Capture(start, requireSuccess);
     }
 
     IEnumerable<string> GitArguments(IEnumerable<string> arguments) {
@@ -132,6 +194,13 @@ sealed partial class GitRepository : IRepository {
     }
 
     static bool SourcesEqual(string expected, string actual) => NormalizeSource(expected).Equals(NormalizeSource(actual), StringComparison.OrdinalIgnoreCase);
+
+    static bool PathsEqual(string expected, string actual) =>
+        Path.GetFullPath(expected).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+            .Equals(
+                Path.GetFullPath(actual).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar),
+                OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal
+            );
 
     static string NormalizeSource(string source) {
         string normalized = source.Trim().TrimEnd('/', '\\');

@@ -1,6 +1,8 @@
 using System;
 using System.IO;
 using System.Text.Json;
+using System.Threading;
+using System.Threading.Tasks;
 using NUnit.Framework;
 
 namespace Unreal.Tests;
@@ -36,6 +38,72 @@ public sealed class RuntimeSetupTests {
             Assert.That(second, Is.EqualTo(first));
             Assert.That(compiler.Calls, Is.EqualTo(1));
             Assert.That(repository.Checkouts, Is.EqualTo(1));
+        });
+    }
+
+    [Test]
+    public void PublishedBranchCommitDoesNotTouchSourcesOrCompiler() {
+        using var directory = new TemporaryDirectory();
+        const string commit = "1111111111111111111111111111111111111111";
+        var firstSetup = CreateSetup(directory, new FakeRepository(commit), new FakeCompiler("5.7.4"), out var store);
+        string first = firstSetup.Prepare();
+        var repository = new FakeRepository(commit);
+        var compiler = new FakeCompiler("5.7.4");
+        var secondSetup = CreateSetup(directory, repository, compiler, out _, out var toolchain);
+
+        using var heldInstallerLock = new FileStream(store.LockPath, FileMode.Open, FileAccess.ReadWrite, FileShare.None);
+        var preparation = Task.Run(secondSetup.Prepare);
+        Assert.That(preparation.Wait(TimeSpan.FromSeconds(2)), Is.True, "an exact published commit must not wait for the installer lock");
+        string second = preparation.Result;
+
+        Assert.Multiple(() => {
+            Assert.That(second, Is.EqualTo(first));
+            Assert.That(repository.ResolveCalls, Is.EqualTo(1));
+            Assert.That(repository.Checkouts, Is.Zero);
+            Assert.That(compiler.Calls, Is.Zero);
+            Assert.That(toolchain.Calls, Is.Zero);
+        });
+    }
+
+    [Test]
+    public void ConcurrentContainersQueueOnSourceFileAndReusePublishedResult() {
+        using var directory = new TemporaryDirectory();
+        const string commit = "1111111111111111111111111111111111111111";
+        using var compileStarted = new ManualResetEventSlim();
+        using var releaseCompile = new ManualResetEventSlim();
+        var firstCompiler = new FakeCompiler("5.7.4") {
+            BeforeCompile = () => {
+                compileStarted.Set();
+                releaseCompile.Wait();
+            }
+        };
+        var firstSetup = CreateSetup(directory, new FakeRepository(commit), firstCompiler, out _);
+        var waitingRepository = new FakeRepository(commit);
+        var waitingCompiler = new FakeCompiler("5.7.4");
+        var waitingSetup = CreateSetup(directory, waitingRepository, waitingCompiler, out _, out var waitingToolchain);
+
+        var first = Task.Run(firstSetup.Prepare);
+        Assert.That(compileStarted.Wait(TimeSpan.FromSeconds(2)), Is.True);
+        var waiting = Task.Run(waitingSetup.Prepare);
+        try {
+            Thread.Sleep(250);
+            Assert.Multiple(() => {
+                Assert.That(waitingRepository.ResolveCalls, Is.EqualTo(1), "the initial remote check should not require the source/build lock");
+                Assert.That(waitingRepository.Checkouts, Is.Zero);
+                Assert.That(waitingCompiler.Calls, Is.Zero);
+                Assert.That(waitingToolchain.Calls, Is.Zero);
+            });
+        } finally {
+            releaseCompile.Set();
+        }
+        Assert.That(Task.WaitAll([first, waiting], TimeSpan.FromSeconds(5)), Is.True);
+
+        Assert.Multiple(() => {
+            Assert.That(waiting.Result, Is.EqualTo(first.Result));
+            Assert.That(waitingRepository.ResolveCalls, Is.EqualTo(2));
+            Assert.That(waitingRepository.Checkouts, Is.Zero);
+            Assert.That(waitingCompiler.Calls, Is.Zero);
+            Assert.That(waitingToolchain.Calls, Is.Zero);
         });
     }
 
@@ -84,6 +152,10 @@ public sealed class RuntimeSetupTests {
     }
 
     static RuntimeSetup CreateSetup(TemporaryDirectory directory, FakeRepository repository, FakeCompiler compiler, out InstallationStore store) {
+        return CreateSetup(directory, repository, compiler, out store, out _);
+    }
+
+    static RuntimeSetup CreateSetup(TemporaryDirectory directory, FakeRepository repository, FakeCompiler compiler, out InstallationStore store, out FakeToolchainConfigurator toolchain) {
         string sources = directory.CreateDirectory("sources");
         string binaries = directory.CreateDirectory("binaries");
         var configuration = new RuntimeConfiguration(
@@ -94,16 +166,21 @@ public sealed class RuntimeSetupTests {
             binaries
         );
         store = new InstallationStore(binaries);
-        return new RuntimeSetup(configuration, repository, compiler, store, new FakeToolchainConfigurator());
+        toolchain = new FakeToolchainConfigurator();
+        return new RuntimeSetup(configuration, repository, compiler, store, toolchain);
     }
 
     sealed class FakeRepository : IRepository {
         public string Commit { get; set; }
+        public int ResolveCalls { get; private set; }
         public int Checkouts { get; private set; }
 
         public FakeRepository(string commit) => Commit = commit;
 
-        public string ResolveRemoteCommit(string source, UnrealVersion version) => Commit;
+        public string ResolveRemoteCommit(string source, UnrealVersion version) {
+            ResolveCalls++;
+            return Commit;
+        }
 
         public string Checkout(string source, UnrealVersion version, string commit, string destination) {
             Checkouts++;
@@ -116,11 +193,13 @@ public sealed class RuntimeSetupTests {
         public string PatchVersion { get; set; }
         public int Calls { get; private set; }
         public Exception? Failure { get; set; }
+        public Action? BeforeCompile { get; init; }
 
         public FakeCompiler(string patchVersion) => PatchVersion = patchVersion;
 
         public InstalledEngine Compile(UnrealVersion version, string sourceRoot, string commit, string buildDirectory) {
             Calls++;
+            BeforeCompile?.Invoke();
             if (Failure is not null) {
                 throw Failure;
             }
@@ -142,7 +221,10 @@ public sealed class RuntimeSetupTests {
     }
 
     sealed class FakeToolchainConfigurator : IToolchainConfigurator {
+        public int Calls { get; private set; }
+
         public void Configure(UnrealVersion version) {
+            Calls++;
         }
     }
 }

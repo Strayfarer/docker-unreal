@@ -36,7 +36,7 @@ COPY --from=launcher C:/out/Build.exe C:/unreal/Build.exe
 
 ENV UNREAL_SOURCE="https://github.com/EpicGames/UnrealEngine"
 
-RUN New-Item -ItemType Directory -Path C:/unreal/binaries, C:/unreal/sources, C:/workspace -Force | Out-Null; `
+RUN New-Item -ItemType Directory -Path C:/unreal/binaries, C:/unreal/cache, C:/unreal/sources, C:/workspace -Force | Out-Null; `
     $machinePath = [Environment]::GetEnvironmentVariable('Path', 'Machine'); `
     [Environment]::SetEnvironmentVariable('Path', ('C:\unreal;' + $machinePath), 'Machine'); `
     & C:/unreal/Build.exe --shim-version; `
@@ -44,7 +44,7 @@ RUN New-Item -ItemType Directory -Path C:/unreal/binaries, C:/unreal/sources, C:
     & C:/Git/cmd/git.exe --version; `
     if ($LASTEXITCODE -ne 0) { throw 'Git smoke check failed' }
 
-VOLUME ["C:/unreal/binaries", "C:/unreal/sources"]
+VOLUME ["C:/unreal/binaries", "C:/unreal/cache", "C:/unreal/sources"]
 
 WORKDIR C:/workspace
 

@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using NUnit.Framework;
 
@@ -51,5 +52,22 @@ public sealed class ProcessRunnerTests {
             Environment.SetEnvironmentVariable(EnvironmentVariableNames.UNREAL_CREDENTIALS_USR, previousUsername);
             Environment.SetEnvironmentVariable(EnvironmentVariableNames.UNREAL_CREDENTIALS_PSW, previousPassword);
         }
+    }
+
+    [Test]
+    [Platform("Win")]
+    public void BatchRunnerAppliesPersistentCacheEnvironment() {
+        using var directory = new TemporaryDirectory();
+        string batch = directory.Write("check-cache.bat", "@echo off\r\nif not \"%UBA_ROOT%\"==\"cache-root\" exit /b 8\r\nexit /b 0\r\n");
+
+        int exitCode = ProcessRunner.RunBatchWithEnvironment(
+            batch,
+            [],
+            directory.Path,
+            false,
+            new Dictionary<string, string> { ["UBA_ROOT"] = "cache-root" }
+        );
+
+        Assert.That(exitCode, Is.Zero);
     }
 }

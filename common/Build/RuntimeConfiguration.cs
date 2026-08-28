@@ -14,7 +14,8 @@ sealed record RuntimeConfiguration(
 ) {
     public const string DEFAULT_SOURCE = "https://github.com/EpicGames/UnrealEngine";
 
-    public string SourceDirectory => Path.Combine(SourcesRoot, "EpicGames.UnrealEngine");
+    public string RepositoryDirectory => Path.Combine(SourcesRoot, "EpicGames.UnrealEngine");
+    public string CacheRoot => Path.Combine(Path.GetDirectoryName(SourcesRoot)!, "cache");
 
     public static RuntimeConfiguration FromEnvironment() {
         var version = UnrealVersion.Parse(EnvironmentVariableNames.UNREAL_VERSION, Environment.GetEnvironmentVariable(EnvironmentVariableNames.UNREAL_VERSION));

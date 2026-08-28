@@ -12,8 +12,12 @@ interface IEngineCompiler {
 
 sealed class EngineCompiler : IEngineCompiler {
     readonly DependencyManifestInstaller _manifestInstaller;
+    readonly RuntimeCache _cache;
 
-    public EngineCompiler(DependencyManifestInstaller manifestInstaller) => _manifestInstaller = manifestInstaller;
+    public EngineCompiler(DependencyManifestInstaller manifestInstaller, RuntimeCache cache) {
+        _manifestInstaller = manifestInstaller;
+        _cache = cache;
+    }
 
     public InstalledEngine Compile(UnrealVersion version, string sourceRoot, string commit, string buildDirectory) {
         var sourceVersion = BuildVersion.Read(sourceRoot);
@@ -23,6 +27,9 @@ sealed class EngineCompiler : IEngineCompiler {
         string gitDependencies = FindGitDependencies(sourceRoot);
         ProcessRunner.Run(gitDependencies, [
             "--force",
+            "--cache=" + _cache.GitDependencies,
+            "--cache-days=90",
+            "--cache-size-multiplier=8",
             "--exclude=Android",
             "--exclude=Linux",
             "--exclude=Mac"
@@ -60,7 +67,7 @@ sealed class EngineCompiler : IEngineCompiler {
 
         Log("compiling the Unreal Engine " + sourceVersion.FullVersion + " Installed Build");
         string runUat = Path.Combine(sourceRoot, "Engine", "Build", "BatchFiles", "RunUAT.bat");
-        ProcessRunner.RunBatch(runUat, arguments, sourceRoot, true, true);
+        ProcessRunner.RunBatchWithEnvironment(runUat, arguments, sourceRoot, true, _cache.Environment, true);
         string installedRoot = Path.Combine(buildDirectory, "Windows");
         ValidateInstalledBuild(installedRoot, version, sourceVersion.FullVersion);
         return new InstalledEngine(installedRoot, sourceVersion.FullVersion);

@@ -16,13 +16,14 @@ static class Program {
 
         try {
             var configuration = RuntimeConfiguration.FromEnvironment();
+            var cache = new RuntimeCache(configuration.CacheRoot, configuration.Version);
             var repository = new GitRepository(configuration.Credentials);
             var store = new InstallationStore(configuration.BinariesRoot);
             using var manifestInstaller = new DependencyManifestInstaller(configuration.Credentials);
-            var compiler = new EngineCompiler(manifestInstaller);
+            var compiler = new EngineCompiler(manifestInstaller, cache);
             var setup = new RuntimeSetup(configuration, repository, compiler, store, new ToolchainConfigurator());
             string buildBatch = setup.Prepare();
-            return ProcessRunner.RunBatch(buildBatch, arguments, Path.GetDirectoryName(buildBatch)!, false, true);
+            return ProcessRunner.RunBatchWithEnvironment(buildBatch, arguments, Path.GetDirectoryName(buildBatch)!, false, cache.Environment, true);
         } catch (Exception exception) {
             Console.Error.WriteLine("docker-unreal: " + exception.Message);
             return 1;

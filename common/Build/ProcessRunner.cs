@@ -34,6 +34,22 @@ static class ProcessRunner {
             RemoveCredentials(start);
         }
 
+        return RunBatch(start, batchFile, requireSuccess);
+    }
+
+    public static int RunBatchWithEnvironment(string batchFile, IEnumerable<string> arguments, string workingDirectory, bool requireSuccess, IReadOnlyDictionary<string, string> environment, bool removeCredentials = false) {
+        var start = CreateBatchStartInfo(batchFile, arguments, workingDirectory);
+        foreach (var variable in environment) {
+            start.Environment[variable.Key] = variable.Value;
+        }
+        if (removeCredentials) {
+            RemoveCredentials(start);
+        }
+
+        return RunBatch(start, batchFile, requireSuccess);
+    }
+
+    static int RunBatch(ProcessStartInfo start, string batchFile, bool requireSuccess) {
         using var process = Process.Start(start) ?? throw new InvalidOperationException("failed to start " + batchFile);
         process.WaitForExit();
         if (requireSuccess && process.ExitCode != 0) {
