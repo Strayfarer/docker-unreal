@@ -1,71 +1,90 @@
 # Unreal Engine Docker Image
 
-This repository builds Windows Docker images containing source-built Unreal Engine Installed Builds. Linux is not supported yet; shared inputs live in `common/` and Windows-specific inputs live in `windows/` so another platform can be added without reorganizing the project.
+This repository builds one Windows Docker image that installs and compiles the requested Unreal Engine minor release when the `Build` launcher is first invoked. Source and Installed Builds live in named volumes and are reused by later containers.
 
 ## Image contents
 
-Each minor image tag tracks the newest released patch in that series:
+The image provides:
 
-| Image | Unreal Engine source tag | Compiler | Windows SDK |
-| --- | --- | --- | --- |
-| `tmp/unreal:5.0` | `5.0.3-release` | Visual Studio 2019 / MSVC 14.29 | 10.0.18362 |
-| `tmp/unreal:5.7` | `5.7.4-release` | Visual Studio 2022 / MSVC 14.44 | 10.0.22621 |
+- `Build.exe`, a shim for Unreal Engine's `Engine/Build/BatchFiles/Build.bat`.
+- Git for Windows for authenticated Epic source checkout and update checks.
+- Visual Studio 2019 and 2022 Build Tools, including the MSVC 14.29, 14.38, and 14.44 toolchains.
+- Windows SDK 10.0.18362 and 10.0.22621, the .NET Framework SDK and legacy reference assemblies, and the June 2010 DirectX runtime files required by Unreal's Windows tools.
 
-Both images use Microsoft's full `mcr.microsoft.com/windows:ltsc2019` base. The full Windows API surface is retained for Unreal tools, and the matching Visual Studio Build Tools remain in the final image for C++ project builds. The source-builder stage additionally installs a .NET Framework SDK through Microsoft's checksum-pinned Windows SDK 18362 bootstrapper, satisfying Unreal's 4.6-or-newer requirement while compiling SwarmInterface.
+The image currently supports minor branch selectors from Unreal Engine 5.0 onward. UE4 is not supported because its older compiler, SDK, .NET, and BuildGraph matrix would materially expand the image and installer; 5.0 is the supported floor.
 
-The Installed Build is placed at `C:/Program Files/Epic Games/UE_<minor>`. Its `Engine/Build/BatchFiles` directory is prepended to the machine `PATH`, so tools such as `Build`, `GenerateProjectFiles`, and `RunUAT` can be called directly.
+Only Win64 host Installed Builds are compiled. Client, server, derived-data-cache, full debug information, signing, and Datasmith build variants are disabled, and the game configuration is limited to Development.
 
-To keep build time and image size bounded, the image includes only the Win64 host platform and the Development game configuration. The derived data cache, templates, samples, and debug-symbol files are omitted. These are optional Installed Build components and can be added when an integration contract needs them.
+## Runtime installation
 
-## Prerequisites
+The first `Build` invocation performs the following work:
 
-Building requires:
+1. Resolve the current commit of the `UNREAL_VERSION` branch at `UNREAL_SOURCE`.
+2. Clone or update that commit in `C:/unreal/sources/EpicGames.UnrealEngine` using the supplied credentials.
+3. Validate that `Engine/Build/Build.version` belongs to the requested minor release.
+4. Download Epic's version-specific dependencies. UE 5.0 receives Epic's checksum-pinned repaired dependency manifest because the manifest committed on that branch uses a retired CDN namespace.
+5. Compile a Win64 Installed Build with the matching MSVC and Windows SDK profile.
+6. Atomically publish the completed engine under `C:/unreal/binaries/<minor>` and record its source URL, branch, patch version, and commit.
+7. Run that installation's real `Engine/Build/BatchFiles/Build.bat` with the original arguments and return its exit code.
 
-- A Windows container daemon compatible with LTSC 2019. The project convention is to register it as the `windows` Docker context; Dende can be selected explicitly with `-DockerContext dende`.
-- A GitHub account linked to an Epic Games account, authenticated in the GitHub CLI with permission to read `EpicGames/UnrealEngine`.
-- Substantial free disk space and build time. Unreal source, dependencies, compiler output, BuildKit cache, and the final image coexist during a build.
+Every invocation resolves the branch again. If its commit has moved, the launcher builds the new patch while retaining the last complete installation, then replaces that installation atomically. A failed update therefore does not destroy the previous engine. Builds sharing the volumes are serialized with a cross-container file lock.
 
-Only disposable `tmp/unreal` images are built. The images are not published by this repository. Unreal Engine development images are governed by the Unreal Engine EULA and must not be distributed to users who are not permitted to access their contents.
+## Configuration
 
-## Build
+- `UNREAL_VERSION` is required and selects a numeric minor branch such as `5.0` or `5.7`.
+- `UNREAL_SOURCE` defaults to `https://github.com/EpicGames/UnrealEngine`.
+- `UNREAL_CREDENTIALS_USR` and `UNREAL_CREDENTIALS_PSW` provide the Git username and personal access token. The account must be linked to an Epic Games account and able to read `EpicGames/UnrealEngine`.
 
-The build script downloads each pinned Epic source commit through the authenticated GitHub API into a cache outside this repository. It packs the selected source into a temporary, ignored `unreal.tar` at the repository root so the legacy Windows builder receives one context file instead of more than 100,000 individual files. The selected dependency manifest is staged separately as `unreal-dependencies.xml`; UE 5.0 uses Epic's checksum-pinned replacement release asset because the manifest committed in the 5.0.3 source tag points at a retired CDN namespace. Both temporary inputs are removed even if the build fails. The commit is resolved before download and recorded in a cache provenance marker. Credentials and the cache marker are used only by the host and are never copied into the Docker build context or an image layer.
+Credentials are supplied to Git through `GIT_ASKPASS`; they are never placed in a command-line URL, source marker, image layer, or forwarded to the final Unreal `Build.bat` process.
 
-Build both integration images on Dende:
+## Volumes
+
+Always mount both advertised locations. Unreal source, downloaded dependencies, intermediates, and Installed Builds are very large.
+
+```yaml
+services:
+  unreal:
+    image: faulo/unreal:latest
+    environment:
+      UNREAL_VERSION: "5.7"
+      UNREAL_SOURCE: https://github.com/EpicGames/UnrealEngine
+      UNREAL_CREDENTIALS_USR: ${UNREAL_CREDENTIALS_USR}
+      UNREAL_CREDENTIALS_PSW: ${UNREAL_CREDENTIALS_PSW}
+    volumes:
+      - unreal-binaries:C:/unreal/binaries
+      - unreal-sources:C:/unreal/sources
+
+volumes:
+  unreal-binaries:
+  unreal-sources:
+```
+
+Cleanup of obsolete source intermediates or no-longer-used minor installations is intentionally outside the launcher's scope.
+
+## Build and test
+
+Launcher unit tests do not require Docker:
+
+```powershell
+dotnet test docker-unreal.sln --configuration Release
+```
+
+Build the disposable candidate image on Dende:
 
 ```powershell
 ./windows/build-images.ps1 -DockerContext dende
 ```
 
-Build one image:
+The script always passes the Docker context explicitly, uses the repository root as build context, selects the legacy Windows builder required by Dende, and refuses non-`tmp` namespaces.
+
+To run the same two selectors as the integration contract, export credentials and run:
 
 ```powershell
-./windows/build-images.ps1 -DockerContext dende -UnrealVersion 5.0
-```
-
-By default, source checkouts are cached under the current user's local application-data directory. Override that location with `-SourceCache` when another disk has more room.
-
-Both Docker builds use the repository root as their context. The script always names the Docker context explicitly, selects Docker's legacy builder because Windows BuildKit execution is unavailable on Dende, and refuses to build outside the `tmp` namespace.
-
-The Explorer entry point is `docker-build-windows.bat`. It is interactive and pauses after the build; use the PowerShell script for automation.
-
-## Test
-
-Run the same command exercised by the current integration tests against both images:
-
-```powershell
+$env:UNREAL_CREDENTIALS_USR = '<github-user>'
+$env:UNREAL_CREDENTIALS_PSW = '<github-token>'
 ./windows/test-images.ps1 -DockerContext dende
 ```
 
-Or test an image directly:
+The test uses the persistent `unreal-binaries` and `unreal-sources` volumes and invokes `Build -Help` for each version in `.env`. The Explorer entry points are `docker-build-windows.bat` and `docker-test-windows.bat`; they are interactive and pause before closing.
 
-```powershell
-docker --context dende run --rm tmp/unreal:5.0 Build -Help
-docker --context dende run --rm tmp/unreal:5.7 Build -Help
-```
-
-The Explorer entry point is `docker-test-windows.bat`.
-
-## Version updates
-
-`common/versions.psd1` is authoritative for the minor-to-patch mapping, source ref and commit, and required Visual Studio components. `common/dependency-manifests.psd1` pins any official replacement dependency manifests needed by older releases. When updating a series, verify the newest stable Epic release, update all pinned metadata together, and build and test the corresponding `tmp` image before changing any integration expectation.
+Only images under the disposable `tmp/unreal` namespace may be built locally. Unreal Engine development images are governed by the Unreal Engine EULA and must not be distributed to users who are not permitted to access their contents.

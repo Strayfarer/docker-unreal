@@ -1,7 +1,7 @@
 **
 !common/
 !common/**
+common/**/bin/
+common/**/obj/
 !windows/
 !windows/**
-!unreal.tar
-!unreal-dependencies.xml

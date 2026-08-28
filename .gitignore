@@ -1,4 +1,3 @@
 *.log
-/unreal/
-/unreal.tar
-/unreal-dependencies.xml
+common/**/bin/
+common/**/obj/
