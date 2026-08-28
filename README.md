@@ -43,6 +43,8 @@ Credentials are supplied to Git through `GIT_ASKPASS`; they are never placed in 
 
 Always mount all three advertised locations. Unreal source, downloaded dependencies, compiler caches, intermediates, and Installed Builds are very large. GitDependencies packs are shared in `C:/unreal/cache/gitdeps`, NuGet and .NET caches in `C:/unreal/cache/nuget` and `C:/unreal/cache/dotnet`, and Unreal Build Accelerator storage is isolated per minor under `C:/unreal/cache/uba/<minor>`.
 
+NuGet vulnerability auditing is disabled only for Unreal's historical, commit-pinned build projects. Otherwise newly published advisories can become warnings-as-errors and make an unchanged engine commit stop compiling over time. Package restore integrity checks and normal compiler warnings and errors remain enabled.
+
 ```yaml
 services:
   unreal:

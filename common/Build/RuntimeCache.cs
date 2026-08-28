@@ -31,6 +31,7 @@ sealed class RuntimeCache {
             ["NUGET_HTTP_CACHE_PATH"] = NuGetHttp,
             ["NUGET_PLUGINS_CACHE_PATH"] = NuGetPlugins,
             ["NUGET_SCRATCH"] = NuGetScratch,
+            ["NuGetAudit"] = "false",
             ["DOTNET_CLI_HOME"] = DotNetHome
         };
     }

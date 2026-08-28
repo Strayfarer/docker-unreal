@@ -17,6 +17,7 @@ public sealed class RuntimeCacheTests {
             Assert.That(cache.Environment["UBA_ROOT"], Is.EqualTo(cache.Uba));
             Assert.That(cache.Environment["NUGET_PACKAGES"], Is.EqualTo(Path.Combine(root, "nuget", "packages")));
             Assert.That(cache.Environment["NUGET_PLUGINS_CACHE_PATH"], Is.EqualTo(Path.Combine(root, "nuget", "plugins")));
+            Assert.That(cache.Environment["NuGetAudit"], Is.EqualTo("false"));
             Assert.That(cache.Environment["DOTNET_CLI_HOME"], Is.EqualTo(Path.Combine(root, "dotnet")));
             Assert.That(Directory.Exists(cache.GitDependencies), Is.True);
             Assert.That(Directory.Exists(cache.NuGetPackages), Is.True);
