@@ -1,0 +1,13 @@
+{
+    "FileVersion": 3,
+    "EngineAssociation": "",
+    "Category": "",
+    "Description": "Minimal project used to verify docker-unreal can build a Win64 game.",
+    "Modules": [
+        {
+            "Name": "EmptyGame",
+            "Type": "Runtime",
+            "LoadingPhase": "Default"
+        }
+    ]
+}

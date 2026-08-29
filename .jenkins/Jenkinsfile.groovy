@@ -8,9 +8,16 @@ def candidateImage() {
     return "$DOCKER_NAMESPACE/$DOCKER_IMAGE"
 }
 
-def testImage() {
+def testImage(unrealVersion) {
     docker.image(candidateImage()).inside('-v unreal-binaries:C:/unreal/binaries -v unreal-cache:C:/unreal/cache -v unreal-sources:C:/unreal/sources') {
         exec 'Build -Help'
+
+        exec 'Build EmptyGame Win64 Development "-Project=%WORKSPACE%\\.jenkins\\projects\\EmptyGame\\EmptyGame.uproject" -WaitMutex'
+        assertValue(
+            fileExists('.jenkins/projects/EmptyGame/Binaries/Win64/EmptyGame.exe'),
+            true,
+            "Unreal v${unrealVersion} game executable"
+        )
     }
 }
 
@@ -55,7 +62,7 @@ stage('Integration Tests') {
                                 withEnvFile {
                                  withCredentials([usernamePassword(credentialsId: unrealCredentials, usernameVariable: 'UNREAL_CREDENTIALS_USR', passwordVariable: 'UNREAL_CREDENTIALS_PSW')]) {
                                     echo "Testing ${candidateImage()} with Unreal v${unrealVersion} on ${host}"
-                                    testImage()
+                                    testImage(unrealVersion)
                             }}}
                         }
                     }
