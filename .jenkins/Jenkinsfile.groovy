@@ -10,13 +10,24 @@ def candidateImage() {
 
 def testImage(unrealVersion) {
     docker.image(candidateImage()).inside('-v unreal-binaries:C:/unreal/binaries -v unreal-cache:C:/unreal/cache -v unreal-sources:C:/unreal/sources') {
-        exec 'Build -Help'
+        def project = '%WORKSPACE%\\test-files\\EmptyGame\\EmptyGame.uproject'
+        def archive = "%WORKSPACE%\\.jenkins\\artifacts\\${unrealVersion}"
 
-        exec 'Build EmptyGame Win64 Development "-Project=%WORKSPACE%\\.jenkins\\projects\\EmptyGame\\EmptyGame.uproject" -WaitMutex'
+        exec 'Unreal --help'
+        exec 'Unreal --version'
+
+        exec "Unreal Build -Target=\"EmptyGameEditor Win64 Development\" -Project=\"${project}\" -WaitMutex"
+        exec "Unreal Cmd \"${project}\" -run=CompileAllBlueprints -AllowListFile=Config/BlueprintAllowList.txt -Unattended -NullRHI -NoSplash -NoP4"
+
+        dir(".jenkins/artifacts/${unrealVersion}") {
+            deleteDir()
+        }
+        exec "Unreal RunUAT BuildCookRun -Project=\"${project}\" -ClientConfig=Shipping -TargetPlatform=Win64 -NoP4 -Build -Cook -AllMaps -Stage -Pak -Package -Archive -ArchiveDirectory=\"${archive}\" -Unattended -UTF8Output"
+        def packagedExecutables = findFiles(glob: ".jenkins/artifacts/${unrealVersion}/**/EmptyGame.exe")
         assertValue(
-            fileExists('.jenkins/projects/EmptyGame/Binaries/Win64/EmptyGame.exe'),
+            packagedExecutables.size() > 0,
             true,
-            "Unreal v${unrealVersion} game executable"
+            "Unreal v${unrealVersion} packaged Shipping executable"
         )
     }
 }
