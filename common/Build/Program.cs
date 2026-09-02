@@ -15,6 +15,12 @@ static class Program {
         }
 
         try {
+            var command = UnrealCommand.Parse(arguments);
+            if (command.Name == EUnrealCommand.Help) {
+                Console.Out.WriteLine(UnrealCommand.HELP);
+                return 0;
+            }
+
             var configuration = RuntimeConfiguration.FromEnvironment();
             var cache = new RuntimeCache(configuration.CacheRoot, configuration.Version);
             var repository = new GitRepository(configuration.Credentials);
@@ -22,8 +28,18 @@ static class Program {
             using var manifestInstaller = new DependencyManifestInstaller(configuration.Credentials);
             var compiler = new EngineCompiler(manifestInstaller, cache);
             var setup = new RuntimeSetup(configuration, repository, compiler, store, new ToolchainConfigurator());
-            string buildBatch = setup.Prepare();
-            return ProcessRunner.RunBatchWithEnvironment(buildBatch, arguments, Path.GetDirectoryName(buildBatch)!, false, cache.Environment, true);
+            var engine = setup.Prepare();
+            if (command.Name == EUnrealCommand.Version) {
+                Console.Out.WriteLine(engine.PatchVersion);
+                return 0;
+            }
+
+            var tool = command.Resolve(engine);
+            var environment = InstalledEngineEnvironment.Create(engine, cache.Environment);
+            string workingDirectory = Path.GetDirectoryName(tool.Executable)!;
+            return tool.IsBatch
+                ? ProcessRunner.RunBatchWithEnvironment(tool.Executable, command.Arguments, workingDirectory, false, environment, true)
+                : ProcessRunner.RunWithEnvironment(tool.Executable, command.Arguments, workingDirectory, false, environment, true);
         } catch (Exception exception) {
             Console.Error.WriteLine("docker-unreal: " + exception.Message);
             return 1;

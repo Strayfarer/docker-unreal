@@ -20,41 +20,47 @@ sealed class RuntimeSetup {
         _cache = new RuntimeCache(configuration.CacheRoot, configuration.Version);
     }
 
-    public string Prepare() {
+    public InstalledEngine Prepare() {
         Directory.CreateDirectory(_configuration.SourcesRoot);
         Directory.CreateDirectory(_configuration.BinariesRoot);
         _cache.Prepare();
+        _toolchain.Configure(_configuration.Version);
         var request = ResolveRequest();
-        if (TryGet(request, out string existingBuildBatch)) {
-            return existingBuildBatch;
+        if (TryGet(request, out var existingEngine)) {
+            return existingEngine;
         }
 
         using var installationLock = InstallationLock.Acquire(_store.LockPath);
         request = ResolveRequest();
-        if (TryGet(request, out existingBuildBatch)) {
-            return existingBuildBatch;
+        if (TryGet(request, out existingEngine)) {
+            return existingEngine;
         }
 
-        _toolchain.Configure(_configuration.Version);
         Log("installing Unreal Engine " + _configuration.Version + " from commit " + request.Commit);
         string sourceRoot = _repository.Checkout(_configuration.Source, _configuration.Version, request.Commit, _configuration.RepositoryDirectory);
         _cache.ImportLegacyGitDependencies(_configuration.RepositoryDirectory);
         string buildDirectory = _store.PrepareBuildDirectory(request);
         var installed = _compiler.Compile(_configuration.Version, sourceRoot, request.Commit, buildDirectory);
         var completedMarker = request with { PatchVersion = installed.PatchVersion };
-        string buildBatch = _store.Publish(buildDirectory, installed.Root, completedMarker);
+        var published = _store.Publish(buildDirectory, installed.Root, completedMarker);
         Log("published Unreal Engine " + installed.PatchVersion + " from commit " + request.Commit);
-        return buildBatch;
+        return published;
     }
 
     InstallationMarker ResolveRequest() {
         Log("resolving " + _configuration.Source + " branch " + _configuration.Version);
         string commit = _repository.ResolveRemoteCommit(_configuration.Source, _configuration.Version);
-        return new InstallationMarker(_configuration.Version.ToString(), string.Empty, _configuration.Source, commit);
+        return new InstallationMarker(
+            _configuration.Version.ToString(),
+            string.Empty,
+            _configuration.Source,
+            commit,
+            EngineCompiler.BUILD_PROFILE
+        );
     }
 
-    bool TryGet(InstallationMarker request, out string buildBatch) {
-        if (!_store.TryGet(request, out buildBatch)) {
+    bool TryGet(InstallationMarker request, out InstalledEngine engine) {
+        if (!_store.TryGet(request, out engine)) {
             return false;
         }
 

@@ -11,6 +11,8 @@ interface IEngineCompiler {
 }
 
 sealed class EngineCompiler : IEngineCompiler {
+    public const string BUILD_PROFILE = "win64-development-shipping-v1";
+
     readonly DependencyManifestInstaller _manifestInstaller;
     readonly RuntimeCache _cache;
 
@@ -51,7 +53,7 @@ sealed class EngineCompiler : IEngineCompiler {
             "-set:WithServer=false",
             "-set:WithDDC=false",
             "-set:WithFullDebugInfo=false",
-            "-set:GameConfigurations=Development",
+            "-set:GameConfigurations=Development;Shipping",
             "-set:CompileDatasmithPlugins=false",
             "-set:SignExecutables=false",
             "-set:EmbedSrcSrvInfo=false",
@@ -91,13 +93,16 @@ sealed class EngineCompiler : IEngineCompiler {
         string[] requiredFiles = [
             Path.Combine(installedRoot, "Engine", "Build", "InstalledBuild.txt"),
             Path.Combine(installedRoot, "Engine", "Build", "BatchFiles", "Build.bat"),
-            Path.Combine(installedRoot, "Engine", "Binaries", "Win64", "UnrealEditor.exe")
+            Path.Combine(installedRoot, "Engine", "Build", "BatchFiles", "RunUAT.bat"),
+            Path.Combine(installedRoot, "Engine", "Binaries", "Win64", "UnrealEditor.exe"),
+            Path.Combine(installedRoot, "Engine", "Binaries", "Win64", "UnrealEditor-Cmd.exe")
         ];
         foreach (string requiredFile in requiredFiles) {
             if (!File.Exists(requiredFile)) {
                 throw new InvalidOperationException("Installed Build output is missing: " + requiredFile);
             }
         }
+        InstalledEngineEnvironment.FindBundledDotnetDirectory(installedRoot);
 
         var installedVersion = BuildVersion.Read(installedRoot);
         installedVersion.AssertMatches(requested);

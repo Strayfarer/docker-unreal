@@ -186,7 +186,7 @@ sealed partial class GitRepository : IRepository {
         }
 
         start.Environment["GIT_ASKPASS"] = Environment.ProcessPath
-                                             ?? throw new InvalidOperationException("cannot locate Build.exe for Git authentication");
+                                             ?? throw new InvalidOperationException("cannot locate Unreal.exe for Git authentication");
         start.Environment["GIT_TERMINAL_PROMPT"] = "0";
         start.Environment[EnvironmentVariableNames.DOCKER_UNREAL_ASKPASS] = "1";
         start.Environment[EnvironmentVariableNames.UNREAL_CREDENTIALS_USR] = _credentials.Username;

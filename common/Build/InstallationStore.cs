@@ -14,9 +14,10 @@ sealed class InstallationStore {
 
     public string LockPath => Path.Combine(_root, ".docker-unreal.lock");
 
-    public bool TryGet(InstallationMarker request, out string buildBatch) {
+    public bool TryGet(InstallationMarker request, out InstalledEngine engine) {
         string target = TargetDirectory(request.Version);
-        buildBatch = BuildBatch(target);
+        string buildBatch = BuildBatch(target);
+        engine = new InstalledEngine(target, string.Empty);
         string markerPath = Path.Combine(target, INSTALLATION_MARKER);
         if (!File.Exists(markerPath) || !File.Exists(buildBatch)) {
             return false;
@@ -27,12 +28,18 @@ sealed class InstallationStore {
             if (marker is null
                 || marker.Version != request.Version
                 || marker.Source != request.Source
-                || marker.Commit != request.Commit) {
+                || marker.Commit != request.Commit
+                || marker.BuildProfile != request.BuildProfile) {
                 return false;
             }
 
             var version = BuildVersion.Read(target);
-            return version.FullVersion == marker.PatchVersion;
+            if (version.FullVersion != marker.PatchVersion) {
+                return false;
+            }
+
+            engine = new InstalledEngine(target, marker.PatchVersion);
+            return true;
         } catch (Exception exception) when (exception is IOException or JsonException or InvalidOperationException) {
             return false;
         }
@@ -51,7 +58,7 @@ sealed class InstallationStore {
         return buildDirectory;
     }
 
-    public string Publish(string buildDirectory, string installedRoot, InstallationMarker marker) {
+    public InstalledEngine Publish(string buildDirectory, string installedRoot, InstallationMarker marker) {
         string expectedInstalledRoot = Path.Combine(buildDirectory, "Windows");
         if (!Path.GetFullPath(installedRoot).Equals(Path.GetFullPath(expectedInstalledRoot), PathComparison())) {
             throw new IOException("installed engine is outside its managed build directory: " + installedRoot);
@@ -83,7 +90,7 @@ sealed class InstallationStore {
 
         ManagedDirectory.DeleteIfPresent(replaced, replacedRoot);
         ManagedDirectory.DeleteIfPresent(buildDirectory, Path.Combine(_root, ".installing"));
-        return BuildBatch(target);
+        return new InstalledEngine(target, marker.PatchVersion);
     }
 
     string TargetDirectory(string version) => Path.Combine(_root, version);

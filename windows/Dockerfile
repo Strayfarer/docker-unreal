@@ -32,15 +32,15 @@ RUN & C:/docker-unreal/windows/install-prerequisites.ps1 -Phase WindowsSdks
 RUN & C:/docker-unreal/windows/install-prerequisites.ps1 -Phase Common; `
     & C:/docker-unreal/windows/install-netfx-sdk.ps1
 
-COPY --from=launcher C:/out/Build.exe C:/unreal/Build.exe
+COPY --from=launcher C:/out/Unreal.exe C:/unreal/Unreal.exe
 
 ENV UNREAL_SOURCE="https://github.com/EpicGames/UnrealEngine"
 
 RUN New-Item -ItemType Directory -Path C:/unreal/binaries, C:/unreal/cache, C:/unreal/sources, C:/workspace -Force | Out-Null; `
     $machinePath = [Environment]::GetEnvironmentVariable('Path', 'Machine'); `
     [Environment]::SetEnvironmentVariable('Path', ('C:\unreal;' + $machinePath), 'Machine'); `
-    & C:/unreal/Build.exe --shim-version; `
-    if ($LASTEXITCODE -ne 0) { throw 'Build.exe smoke check failed' }; `
+    & C:/unreal/Unreal.exe --shim-version; `
+    if ($LASTEXITCODE -ne 0) { throw 'Unreal.exe smoke check failed' }; `
     & C:/Git/cmd/git.exe --version; `
     if ($LASTEXITCODE -ne 0) { throw 'Git smoke check failed' }
 
@@ -48,4 +48,4 @@ VOLUME ["C:/unreal/binaries", "C:/unreal/cache", "C:/unreal/sources"]
 
 WORKDIR C:/workspace
 
-CMD ["Build.exe", "-Help"]
+CMD ["Unreal.exe", "--help"]

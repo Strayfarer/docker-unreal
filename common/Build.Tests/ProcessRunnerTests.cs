@@ -33,6 +33,41 @@ public sealed class ProcessRunnerTests {
         });
     }
 
+    [TestCase("", "\"\"")]
+    [TestCase("plain", "\"plain\"")]
+    [TestCase("two words", "\"two words\"")]
+    [TestCase("C:\\trailing\\", "\"C:\\trailing\\\\\"")]
+    [TestCase("embedded\"quote", "\"embedded\\\"quote\"")]
+    public void WindowsArgumentQuotingPreservesParsedValue(string argument, string expected) {
+        Assert.That(ProcessRunner.QuoteWindowsArgument(argument), Is.EqualTo(expected));
+    }
+
+    [Test]
+    [NonParallelizable]
+    public void ExecutableStartInfoQuotesEveryRawArgument() {
+        using var directory = new TemporaryDirectory();
+        const string variable = "DOCKER_UNREAL_TEST_WORKSPACE";
+        string? previous = Environment.GetEnvironmentVariable(variable);
+        try {
+            Environment.SetEnvironmentVariable(variable, "expanded-workspace");
+            var actual = ProcessRunner.CreateAlwaysQuotedStartInfo(
+                "UnrealEditor-Cmd.exe",
+                ["%DOCKER_UNREAL_TEST_WORKSPACE%/project.uproject", "-AllowListFile=Config/BlueprintAllowList.txt"],
+                directory.Path
+            );
+
+            Assert.Multiple(() => {
+                Assert.That(actual.FileName, Is.EqualTo("UnrealEditor-Cmd.exe"));
+                Assert.That(actual.UseShellExecute, Is.False);
+                Assert.That(actual.WorkingDirectory, Is.EqualTo(directory.Path));
+                Assert.That(actual.Arguments, Is.EqualTo("\"expanded-workspace/project.uproject\" \"-AllowListFile=Config/BlueprintAllowList.txt\""));
+                Assert.That(actual.ArgumentList, Is.Empty);
+            });
+        } finally {
+            Environment.SetEnvironmentVariable(variable, previous);
+        }
+    }
+
     [Test]
     [Platform("Win")]
     [NonParallelizable]

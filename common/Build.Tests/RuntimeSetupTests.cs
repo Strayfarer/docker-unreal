@@ -15,10 +15,12 @@ public sealed class RuntimeSetupTests {
         var compiler = new FakeCompiler("5.7.4");
         var setup = CreateSetup(directory, repository, compiler, out _);
 
-        string buildBatch = setup.Prepare();
+        var engine = setup.Prepare();
+        string buildBatch = Path.Combine(engine.Root, "Engine", "Build", "BatchFiles", "Build.bat");
 
         Assert.Multiple(() => {
             Assert.That(compiler.Calls, Is.EqualTo(1));
+            Assert.That(engine.PatchVersion, Is.EqualTo("5.7.4"));
             Assert.That(buildBatch, Is.EqualTo(Path.Combine(directory.Path, "binaries", "5.7", "Engine", "Build", "BatchFiles", "Build.bat")));
             Assert.That(File.Exists(buildBatch), Is.True);
         });
@@ -31,8 +33,8 @@ public sealed class RuntimeSetupTests {
         var compiler = new FakeCompiler("5.7.4");
         var setup = CreateSetup(directory, repository, compiler, out _);
 
-        string first = setup.Prepare();
-        string second = setup.Prepare();
+        var first = setup.Prepare();
+        var second = setup.Prepare();
 
         Assert.Multiple(() => {
             Assert.That(second, Is.EqualTo(first));
@@ -42,11 +44,36 @@ public sealed class RuntimeSetupTests {
     }
 
     [Test]
+    public void LegacyBuildProfileRecompilesPublishedEngine() {
+        using var directory = new TemporaryDirectory();
+        const string commit = "1111111111111111111111111111111111111111";
+        var repository = new FakeRepository(commit);
+        var compiler = new FakeCompiler("5.7.4");
+        var setup = CreateSetup(directory, repository, compiler, out _);
+        setup.Prepare();
+        string markerPath = Path.Combine(directory.Path, "binaries", "5.7", ".docker-unreal.json");
+        File.WriteAllText(markerPath, JsonSerializer.Serialize(new {
+            Version = "5.7",
+            PatchVersion = "5.7.4",
+            Source = "https://example.invalid/UnrealEngine",
+            Commit = commit
+        }));
+
+        var rebuilt = setup.Prepare();
+
+        Assert.Multiple(() => {
+            Assert.That(compiler.Calls, Is.EqualTo(2));
+            Assert.That(rebuilt.PatchVersion, Is.EqualTo("5.7.4"));
+            Assert.That(JsonSerializer.Deserialize<InstallationMarker>(File.ReadAllText(markerPath))!.BuildProfile, Is.EqualTo(EngineCompiler.BUILD_PROFILE));
+        });
+    }
+
+    [Test]
     public void PublishedBranchCommitDoesNotTouchSourcesOrCompiler() {
         using var directory = new TemporaryDirectory();
         const string commit = "1111111111111111111111111111111111111111";
         var firstSetup = CreateSetup(directory, new FakeRepository(commit), new FakeCompiler("5.7.4"), out var store);
-        string first = firstSetup.Prepare();
+        var first = firstSetup.Prepare();
         var repository = new FakeRepository(commit);
         var compiler = new FakeCompiler("5.7.4");
         var secondSetup = CreateSetup(directory, repository, compiler, out _, out var toolchain);
@@ -54,14 +81,14 @@ public sealed class RuntimeSetupTests {
         using var heldInstallerLock = new FileStream(store.LockPath, FileMode.Open, FileAccess.ReadWrite, FileShare.None);
         var preparation = Task.Run(secondSetup.Prepare);
         Assert.That(preparation.Wait(TimeSpan.FromSeconds(2)), Is.True, "an exact published commit must not wait for the installer lock");
-        string second = preparation.Result;
+        var second = preparation.Result;
 
         Assert.Multiple(() => {
             Assert.That(second, Is.EqualTo(first));
             Assert.That(repository.ResolveCalls, Is.EqualTo(1));
             Assert.That(repository.Checkouts, Is.Zero);
             Assert.That(compiler.Calls, Is.Zero);
-            Assert.That(toolchain.Calls, Is.Zero);
+            Assert.That(toolchain.Calls, Is.EqualTo(1));
         });
     }
 
@@ -91,7 +118,7 @@ public sealed class RuntimeSetupTests {
                 Assert.That(waitingRepository.ResolveCalls, Is.EqualTo(1), "the initial remote check should not require the source/build lock");
                 Assert.That(waitingRepository.Checkouts, Is.Zero);
                 Assert.That(waitingCompiler.Calls, Is.Zero);
-                Assert.That(waitingToolchain.Calls, Is.Zero);
+                Assert.That(waitingToolchain.Calls, Is.EqualTo(1));
             });
         } finally {
             releaseCompile.Set();
@@ -103,7 +130,7 @@ public sealed class RuntimeSetupTests {
             Assert.That(waitingRepository.ResolveCalls, Is.EqualTo(2));
             Assert.That(waitingRepository.Checkouts, Is.Zero);
             Assert.That(waitingCompiler.Calls, Is.Zero);
-            Assert.That(waitingToolchain.Calls, Is.Zero);
+            Assert.That(waitingToolchain.Calls, Is.EqualTo(1));
         });
     }
 
@@ -117,7 +144,8 @@ public sealed class RuntimeSetupTests {
         repository.Commit = "2222222222222222222222222222222222222222";
         compiler.PatchVersion = "5.7.5";
 
-        string buildBatch = setup.Prepare();
+        var engine = setup.Prepare();
+        string buildBatch = Path.Combine(engine.Root, "Engine", "Build", "BatchFiles", "Build.bat");
         string markerPath = Path.Combine(directory.Path, "binaries", "5.7", ".docker-unreal.json");
         var marker = JsonSerializer.Deserialize<InstallationMarker>(File.ReadAllText(markerPath))!;
 
@@ -138,15 +166,22 @@ public sealed class RuntimeSetupTests {
         var repository = new FakeRepository(firstCommit);
         var compiler = new FakeCompiler("5.7.4");
         var setup = CreateSetup(directory, repository, compiler, out var store);
-        string buildBatch = setup.Prepare();
+        var engine = setup.Prepare();
+        string buildBatch = Path.Combine(engine.Root, "Engine", "Build", "BatchFiles", "Build.bat");
         repository.Commit = "2222222222222222222222222222222222222222";
         compiler.Failure = new InvalidOperationException("compiler failed");
 
         Assert.That(() => setup.Prepare(), Throws.TypeOf<InvalidOperationException>());
-        var previous = new InstallationMarker("5.7", string.Empty, "https://example.invalid/UnrealEngine", firstCommit);
+        var previous = new InstallationMarker(
+            "5.7",
+            string.Empty,
+            "https://example.invalid/UnrealEngine",
+            firstCommit,
+            EngineCompiler.BUILD_PROFILE
+        );
         Assert.Multiple(() => {
-            Assert.That(store.TryGet(previous, out string preserved), Is.True);
-            Assert.That(preserved, Is.EqualTo(buildBatch));
+            Assert.That(store.TryGet(previous, out var preserved), Is.True);
+            Assert.That(preserved, Is.EqualTo(engine));
             Assert.That(File.Exists(buildBatch), Is.True);
         });
     }

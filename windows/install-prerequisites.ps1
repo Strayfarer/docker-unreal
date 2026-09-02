@@ -213,7 +213,7 @@ foreach ($cabinet in $directXFiles.Keys) {
 }
 Remove-Item -LiteralPath $directXArchive, $directXRoot -Recurse -Force
 
-# MinGit supplies the authenticated clone/fetch operations performed by Build.exe.
+# MinGit supplies the authenticated clone/fetch operations performed by Unreal.exe.
 $gitVersion = '2.55.0.5'
 $gitArchive = "C:\MinGit-${gitVersion}-64-bit.zip"
 $gitUri = "https://github.com/git-for-windows/git/releases/download/v2.55.0.windows.5/MinGit-${gitVersion}-64-bit.zip"

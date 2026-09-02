@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.Text;
 using System.Threading.Tasks;
 
 namespace Unreal;
@@ -11,6 +12,15 @@ sealed record ProcessResult(int ExitCode, string StandardOutput, string Standard
 static class ProcessRunner {
     public static int Run(string executable, IEnumerable<string> arguments, string workingDirectory, bool requireSuccess, bool removeCredentials = false) {
         var start = CreateStartInfo(executable, arguments, workingDirectory);
+        if (removeCredentials) {
+            RemoveCredentials(start);
+        }
+        return Run(start, requireSuccess);
+    }
+
+    public static int RunWithEnvironment(string executable, IEnumerable<string> arguments, string workingDirectory, bool requireSuccess, IReadOnlyDictionary<string, string> environment, bool removeCredentials = false) {
+        var start = CreateAlwaysQuotedStartInfo(executable, arguments, workingDirectory);
+        ApplyEnvironment(start, environment);
         if (removeCredentials) {
             RemoveCredentials(start);
         }
@@ -39,9 +49,7 @@ static class ProcessRunner {
 
     public static int RunBatchWithEnvironment(string batchFile, IEnumerable<string> arguments, string workingDirectory, bool requireSuccess, IReadOnlyDictionary<string, string> environment, bool removeCredentials = false) {
         var start = CreateBatchStartInfo(batchFile, arguments, workingDirectory);
-        foreach (var variable in environment) {
-            start.Environment[variable.Key] = variable.Value;
-        }
+        ApplyEnvironment(start, environment);
         if (removeCredentials) {
             RemoveCredentials(start);
         }
@@ -91,6 +99,52 @@ static class ProcessRunner {
         return start;
     }
 
+    internal static ProcessStartInfo CreateAlwaysQuotedStartInfo(string executable, IEnumerable<string> arguments, string workingDirectory) {
+        // Unreal 5.0 parses the raw command line and splits dotted option values unless each argument is quoted.
+        var commandLine = new StringBuilder();
+        foreach (string argument in arguments) {
+            if (commandLine.Length > 0) {
+                commandLine.Append(' ');
+            }
+            // Batch dispatch expands Jenkins-style %VARIABLE% paths through cmd.exe; native dispatch must match it.
+            string expanded = Environment.ExpandEnvironmentVariables(argument);
+            commandLine.Append(QuoteWindowsArgument(expanded));
+        }
+
+        return new ProcessStartInfo {
+            FileName = executable,
+            Arguments = commandLine.ToString(),
+            UseShellExecute = false,
+            WorkingDirectory = workingDirectory
+        };
+    }
+
+    internal static string QuoteWindowsArgument(string argument) {
+        var quoted = new StringBuilder("\"");
+        int backslashes = 0;
+        foreach (char character in argument) {
+            if (character == '\\') {
+                backslashes++;
+                continue;
+            }
+
+            if (character == '"') {
+                quoted.Append('\\', (backslashes * 2) + 1);
+                quoted.Append('"');
+                backslashes = 0;
+                continue;
+            }
+
+            quoted.Append('\\', backslashes);
+            quoted.Append(character);
+            backslashes = 0;
+        }
+
+        quoted.Append('\\', backslashes * 2);
+        quoted.Append('"');
+        return quoted.ToString();
+    }
+
     internal static ProcessStartInfo CreateBatchStartInfo(string batchFile, IEnumerable<string> arguments, string workingDirectory) {
         var start = CreateStartInfo("cmd.exe", ["/D", "/S", "/C", "call", batchFile], workingDirectory);
         foreach (string argument in arguments) {
@@ -98,6 +152,12 @@ static class ProcessRunner {
         }
 
         return start;
+    }
+
+    static void ApplyEnvironment(ProcessStartInfo start, IReadOnlyDictionary<string, string> environment) {
+        foreach (var variable in environment) {
+            start.Environment[variable.Key] = variable.Value;
+        }
     }
 
     static void RemoveCredentials(ProcessStartInfo start) {
