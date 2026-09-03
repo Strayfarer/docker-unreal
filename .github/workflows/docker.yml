@@ -1,0 +1,123 @@
+name: Docker
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - common/**
+      - windows/**
+      - .env
+      - .github/workflows/docker.yml
+      - Directory.Build.props
+      - docker-unreal.sln
+      - global.json
+  workflow_dispatch:
+  schedule:
+    - cron: "23 3 1 * *"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: docker-publish
+  cancel-in-progress: false
+
+jobs:
+  test:
+    runs-on: windows-2022
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Set up .NET
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: 9.0.x
+      - name: Restore
+        run: dotnet restore docker-unreal.sln
+      - name: Test
+        run: dotnet test docker-unreal.sln --configuration Release --no-restore
+
+  publish:
+    needs: test
+    runs-on: windows-2022
+    timeout-minutes: 180
+    env:
+      DOCKERHUB_USERNAME: ${{secrets.DOCKERHUB_USERNAME}}
+      IMAGE_TAG: latest
+      PLATFORM_TAG: latest-windows-ltsc2019
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Read image name
+        shell: pwsh
+        run: |
+          $line = Get-Content -LiteralPath .env | Where-Object { $_ -match '^DOCKER_IMAGE=' } | Select-Object -First 1
+          if (-not $line) {
+            throw 'DOCKER_IMAGE is missing from .env'
+          }
+
+          $imageName = $line.Substring('DOCKER_IMAGE='.Length).Trim('"')
+          if (-not $imageName) {
+            throw 'DOCKER_IMAGE is empty in .env'
+          }
+
+          "IMAGE=${env:DOCKERHUB_USERNAME}/${imageName}" >> $env:GITHUB_ENV
+      - name: Ensure Docker is running
+        shell: pwsh
+        run: |
+          $service = Get-Service docker -ErrorAction Stop
+          if ($service.Status -ne 'Running') {
+            Start-Service docker
+          }
+
+          $ready = $false
+          for ($attempt = 1; $attempt -le 24; $attempt++) {
+            docker info *> $null
+            if ($LASTEXITCODE -eq 0) {
+              $ready = $true
+              break
+            }
+
+            Start-Sleep -Seconds 5
+          }
+
+          if (-not $ready) {
+            Get-Service docker
+            throw 'Docker daemon not ready after 120 seconds'
+          }
+
+          docker version
+      - name: Login to Docker Hub
+        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 # v4
+        with:
+          username: ${{secrets.DOCKERHUB_USERNAME}}
+          password: ${{secrets.DOCKERHUB_TOKEN}}
+      - name: Restore image cache
+        continue-on-error: true
+        shell: pwsh
+        run: docker image pull "${env:IMAGE}:${env:PLATFORM_TAG}"
+      - name: Build image
+        shell: pwsh
+        run: |
+          docker build --isolation=hyperv `
+            --pull `
+            --cache-from "${env:IMAGE}:${env:PLATFORM_TAG}" `
+            --file windows/Dockerfile `
+            --tag "${env:IMAGE}:${env:PLATFORM_TAG}" `
+            --tag "${env:IMAGE}:${env:IMAGE_TAG}" `
+            .
+
+          if ($LASTEXITCODE -ne 0) {
+            exit $LASTEXITCODE
+          }
+      - name: Push image
+        shell: pwsh
+        run: |
+          docker image push "${env:IMAGE}:${env:PLATFORM_TAG}"
+          if ($LASTEXITCODE -ne 0) {
+            exit $LASTEXITCODE
+          }
+
+          docker image push "${env:IMAGE}:${env:IMAGE_TAG}"
