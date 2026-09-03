@@ -13,7 +13,7 @@ The image provides:
 
 The image supports minor selectors from Unreal Engine 5.0 onward. UE4 is not supported because its older compiler, SDK, .NET, and BuildGraph matrix would materially expand the image and installer; 5.0 is the supported floor.
 
-Only Win64 host Installed Builds are compiled. Client, server, derived-data-cache, full debug information, signing, and Datasmith build variants are disabled. The supported game configurations are Development and Shipping.
+Only Win64 host Installed Builds are compiled. Client, server, packaged derived-data-cache, full debug information, signing, and Datasmith build variants are disabled. The supported game configurations are Development and Shipping.
 
 ## Commands
 
@@ -53,7 +53,7 @@ The resolved commit hash is always the engine version's immutable ID and install
 2. Clone the shared repository in `C:/unreal/sources/EpicGames.UnrealEngine` and create or update a persistent worktree for the requested minor release using the supplied credentials. The original checkout is retained as one minor's worktree; additional worktrees live under `C:/unreal/sources/worktrees/<minor>`.
 3. Validate that `Engine/Build/Build.version` belongs to the requested minor release.
 4. Download Epic's version-specific dependencies. UE 5.0 receives Epic's checksum-pinned repaired dependency manifest because the manifest committed on that branch uses a retired CDN namespace.
-5. Compile a Win64 Installed Build with the matching MSVC and Windows SDK profile.
+5. Compile a Win64 Installed Build with the matching MSVC and Windows SDK profile, using the requested minor release's persistent local Derived Data Cache.
 6. Atomically publish the completed engine under `C:/unreal/binaries/<minor>` and record its source URL, requested minor, commit ID, patch version, and Installed Build profile.
 7. Exit successfully for `--compile`, or dispatch to that installation's `Build.bat`, `RunUAT.bat`, or `UnrealEditor-Cmd.exe` with the original arguments and return its exit code.
 
@@ -73,6 +73,8 @@ Credentials are supplied to Git through `GIT_ASKPASS`; they are never placed in 
 ## Volumes
 
 Always mount all three advertised locations. Unreal source, downloaded dependencies, compiler caches, intermediates, and Installed Builds are very large. GitDependencies packs are shared in `C:/unreal/cache/gitdeps`, NuGet and .NET caches in `C:/unreal/cache/nuget` and `C:/unreal/cache/dotnet`, and Unreal Build Accelerator storage is isolated per minor under `C:/unreal/cache/uba/<minor>`.
+
+The launcher sets Unreal's supported `UE-LocalDataCachePath` override to `C:/unreal/cache/ddc/<minor>` for Installed Build compilation and every forwarded engine tool, where `<minor>` is the normalized `UNREAL_VERSION`. This keeps the DDC in the persistent `unreal-cache` volume while preventing different requested engine minors from sharing one cache. Unreal 5.4 and newer use a local Zen store and place its data in a `Zen` subdirectory of that override; older versions use the same override as their filesystem DDC root. Packaged Installed Build DDC generation remains disabled because the writable persistent cache is populated on demand. See Epic's [Derived Data Cache documentation](https://dev.epicgames.com/documentation/unreal-engine/using-derived-data-cache-in-unreal-engine).
 
 NuGet vulnerability auditing is disabled only for Unreal's historical, commit-pinned build projects. Otherwise newly published advisories can become warnings-as-errors and make an unchanged engine commit stop compiling over time. Package restore integrity checks and normal compiler warnings and errors remain enabled.
 
@@ -123,6 +125,6 @@ $env:UNREAL_CREDENTIALS_PSW = '<github-token>'
 ./windows/test-images.ps1 -DockerContext dende
 ```
 
-The integration contract uses the persistent `unreal-binaries`, `unreal-cache`, and `unreal-sources` volumes and exercises all six public command forms. It verifies branch and tag resolution, verifies that `--version` does not materialize an engine, verifies cross-mode reuse when both modes resolve the same commit, and precompiles with `--compile`. It then builds the editor target for `test-files/EmptyGame`, compiles the fixture's Blueprint through `Unreal Cmd`, and uses `Unreal RunUAT BuildCookRun` to archive a Shipping executable and pak file. The Explorer entry points are `docker-build-windows.bat` and `docker-test-windows.bat`; they are interactive and pause before closing.
+The integration contract uses the persistent `unreal-binaries`, `unreal-cache`, and `unreal-sources` volumes and exercises all six public command forms. It verifies branch and tag resolution, verifies that `--version` does not materialize an engine, verifies cross-mode reuse when both modes resolve the same commit, exercises `--compile` against an exact precompiled installation, and verifies the version-scoped DDC environment. Each real-engine stage then lets `Unreal Build` either reuse the persistent precompiled engine or compile it on a cache miss. It builds the editor target for `test-files/EmptyGame`, compiles the fixture's Blueprint through `Unreal Cmd`, and uses `Unreal RunUAT BuildCookRun` to archive a Shipping executable and pak file. The Explorer entry points are `docker-build-windows.bat` and `docker-test-windows.bat`; they are interactive and pause before closing.
 
 Only images under the disposable `tmp/unreal` namespace may be built locally. Unreal Engine development images are governed by the Unreal Engine EULA and must not be distributed to users who are not permitted to access their contents.

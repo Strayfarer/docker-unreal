@@ -5,7 +5,7 @@ namespace Unreal.Tests;
 
 public sealed class RuntimeCacheTests {
     [Test]
-    public void CreatesVersionedUbaAndSharedPackageCaches() {
+    public void CreatesVersionedDerivedDataAndUbaCachesAndSharedPackageCaches() {
         using var directory = new TemporaryDirectory();
         string root = Path.Combine(directory.Path, "cache");
         var cache = new RuntimeCache(root, UnrealVersion.Parse("VERSION", "5.7"));
@@ -13,14 +13,31 @@ public sealed class RuntimeCacheTests {
         cache.Prepare();
 
         Assert.Multiple(() => {
+            Assert.That(cache.DerivedData, Is.EqualTo(Path.Combine(root, "ddc", "5.7")));
+            Assert.That(cache.Environment["UE-LocalDataCachePath"], Is.EqualTo(cache.DerivedData));
             Assert.That(cache.Uba, Is.EqualTo(Path.Combine(root, "uba", "5.7")));
             Assert.That(cache.Environment["UBA_ROOT"], Is.EqualTo(cache.Uba));
             Assert.That(cache.Environment["NUGET_PACKAGES"], Is.EqualTo(Path.Combine(root, "nuget", "packages")));
             Assert.That(cache.Environment["NUGET_PLUGINS_CACHE_PATH"], Is.EqualTo(Path.Combine(root, "nuget", "plugins")));
             Assert.That(cache.Environment["NuGetAudit"], Is.EqualTo("false"));
             Assert.That(cache.Environment["DOTNET_CLI_HOME"], Is.EqualTo(Path.Combine(root, "dotnet")));
+            Assert.That(Directory.Exists(cache.DerivedData), Is.True);
             Assert.That(Directory.Exists(cache.GitDependencies), Is.True);
             Assert.That(Directory.Exists(cache.NuGetPackages), Is.True);
+        });
+    }
+
+    [Test]
+    public void IsolatesDerivedDataByRequestedEngineVersion() {
+        using var directory = new TemporaryDirectory();
+        string root = Path.Combine(directory.Path, "cache");
+        var first = new RuntimeCache(root, UnrealVersion.Parse("VERSION", "5.7"));
+        var second = new RuntimeCache(root, UnrealVersion.Parse("VERSION", "5.8"));
+
+        Assert.Multiple(() => {
+            Assert.That(first.DerivedData, Is.EqualTo(Path.Combine(root, "ddc", "5.7")));
+            Assert.That(second.DerivedData, Is.EqualTo(Path.Combine(root, "ddc", "5.8")));
+            Assert.That(second.DerivedData, Is.Not.EqualTo(first.DerivedData));
         });
     }
 

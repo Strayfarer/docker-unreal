@@ -6,6 +6,7 @@ namespace Unreal;
 
 sealed class RuntimeCache {
     public string Root { get; }
+    public string DerivedData { get; }
     public string GitDependencies { get; }
     public string Uba { get; }
     public string NuGetPackages { get; }
@@ -18,6 +19,7 @@ sealed class RuntimeCache {
 
     public RuntimeCache(string root, UnrealVersion version) {
         Root = root;
+        DerivedData = Path.Combine(root, "ddc", version.ToString());
         GitDependencies = Path.Combine(root, "gitdeps");
         Uba = Path.Combine(root, "uba", version.ToString());
         NuGetPackages = Path.Combine(root, "nuget", "packages");
@@ -26,6 +28,7 @@ sealed class RuntimeCache {
         NuGetScratch = Path.Combine(root, "nuget", "scratch");
         DotNetHome = Path.Combine(root, "dotnet");
         Environment = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) {
+            ["UE-LocalDataCachePath"] = DerivedData,
             ["UBA_ROOT"] = Uba,
             ["NUGET_PACKAGES"] = NuGetPackages,
             ["NUGET_HTTP_CACHE_PATH"] = NuGetHttp,
@@ -37,6 +40,7 @@ sealed class RuntimeCache {
     }
 
     public void Prepare() {
+        Directory.CreateDirectory(DerivedData);
         Directory.CreateDirectory(GitDependencies);
         Directory.CreateDirectory(Uba);
         Directory.CreateDirectory(NuGetPackages);
