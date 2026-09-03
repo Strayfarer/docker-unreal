@@ -75,8 +75,16 @@ def testVersionResolution() {
             $engineRoot = 'C:/unreal/binaries/5.8'
             $buildDirectory = Join-Path $engineRoot 'Engine/Build'
             $batchDirectory = Join-Path $buildDirectory 'BatchFiles'
+            $dotnetDirectory = Join-Path $engineRoot 'Engine/Binaries/ThirdParty/DotNet/8.0.300/win-x64'
             New-Item -ItemType Directory -Path $batchDirectory -Force | Out-Null
-            Set-Content -LiteralPath (Join-Path $batchDirectory 'Build.bat') -Value '@exit /b 91' -Encoding ascii
+            New-Item -ItemType Directory -Path $dotnetDirectory -Force | Out-Null
+            Set-Content -LiteralPath (Join-Path $dotnetDirectory 'dotnet.exe') -Value 'integration fixture' -Encoding ascii
+            @(
+                '@echo off',
+                'if /I not "%UE-LocalDataCachePath%"=="C:\unreal\cache\ddc\5.8" exit /b 92',
+                'if not exist "%UE-LocalDataCachePath%\integration-sentinel.txt" exit /b 93',
+                'exit /b 0'
+            ) | Set-Content -LiteralPath (Join-Path $batchDirectory 'Build.bat') -Encoding ascii
             Set-Content -LiteralPath (Join-Path $buildDirectory 'Build.version') -Value '{"MajorVersion":5,"MinorVersion":8,"PatchVersion":10}' -Encoding ascii
             Set-Content -LiteralPath (Join-Path $engineRoot 'branch-resolved.marker') -Value $resolvedCommit -Encoding ascii
             [ordered]@{
@@ -100,6 +108,16 @@ def testVersionResolution() {
             if (-not (Test-Path -LiteralPath $sentinel) -or (Get-Content -Raw -LiteralPath $sentinel).Trim() -ne $resolvedCommit) {
                 throw 'Tag-mode compile replaced the branch-resolved installation at the same commit'
             }
+
+            $expectedDdc = 'C:/unreal/cache/ddc/5.8'
+            if (-not (Test-Path -LiteralPath $expectedDdc -PathType Container)) {
+                throw "Unreal --compile did not prepare the version-scoped DDC at $expectedDdc"
+            }
+            Set-Content -LiteralPath (Join-Path $expectedDdc 'integration-sentinel.txt') -Value 'persistent DDC fixture' -Encoding ascii
+            & Unreal.exe Build -Target='integration DDC environment fixture'
+            if ($LASTEXITCODE -ne 0) {
+                throw "Unreal Build did not receive the version-scoped DDC environment; exit code $LASTEXITCODE"
+            }
 '@
 
             & docker run --rm $env:UNREAL_RESOLVER_IMAGE powershell.exe -NoLogo -NoProfile -NonInteractive -Command $containerScript
@@ -118,8 +136,8 @@ def testImage(unrealVersion, expectedTag) {
         exec 'Unreal --help'
         def resolvedTag = execStdout 'Unreal --version'
         assertValue(resolvedTag, expectedTag, "Unreal v${unrealVersion} resolved tag")
-        exec 'Unreal --compile'
 
+        // Build ensures the engine on a cold volume and takes the precompiled happy path on a cache hit.
         exec "Unreal Build -Target=\"EmptyGameEditor Win64 Development\" -Project=\"${project}\" -WaitMutex"
         exec "Unreal Cmd \"${project}\" -run=CompileAllBlueprints -AllowListFile=Config/BlueprintAllowList.txt -Unattended -NullRHI -NoSplash -NoP4"
 
