@@ -81,8 +81,9 @@ def testVersionResolution() {
             Set-Content -LiteralPath (Join-Path $dotnetDirectory 'dotnet.exe') -Value 'integration fixture' -Encoding ascii
             @(
                 '@echo off',
-                'if /I not "%UE-LocalDataCachePath%"=="C:\unreal\cache\ddc\5.8" exit /b 92',
+                'if /I not "%UE-LocalDataCachePath%"=="C:\unreal\cache\ddc" exit /b 92',
                 'if not exist "%UE-LocalDataCachePath%\integration-sentinel.txt" exit /b 93',
+                'if /I not "%UE-ZenSharedDataCacheHost%"=="http://ddc.example.invalid:8558" exit /b 94',
                 'exit /b 0'
             ) | Set-Content -LiteralPath (Join-Path $batchDirectory 'Build.bat') -Encoding ascii
             Set-Content -LiteralPath (Join-Path $buildDirectory 'Build.version') -Value '{"MajorVersion":5,"MinorVersion":8,"PatchVersion":10}' -Encoding ascii
@@ -96,6 +97,7 @@ def testVersionResolution() {
             } | ConvertTo-Json -Compress | Set-Content -LiteralPath (Join-Path $engineRoot '.docker-unreal.json') -Encoding utf8
 
             Remove-Item Env:UNREAL_VERSION_MODE
+            $env:UNREAL_DDC = 'http://ddc.example.invalid:8558'
             & Unreal.exe --compile
             if ($LASTEXITCODE -ne 0) {
                 throw "Unreal --compile failed with exit code $LASTEXITCODE"
@@ -109,14 +111,17 @@ def testVersionResolution() {
                 throw 'Tag-mode compile replaced the branch-resolved installation at the same commit'
             }
 
-            $expectedDdc = 'C:/unreal/cache/ddc/5.8'
+            $expectedDdc = 'C:/unreal/cache/ddc'
             if (-not (Test-Path -LiteralPath $expectedDdc -PathType Container)) {
-                throw "Unreal --compile did not prepare the version-scoped DDC at $expectedDdc"
+                throw "Unreal --compile did not prepare the persistent local DDC at $expectedDdc"
+            }
+            if (Test-Path -LiteralPath (Join-Path $expectedDdc '5.8')) {
+                throw 'The persistent local DDC was partitioned by UNREAL_VERSION'
             }
             Set-Content -LiteralPath (Join-Path $expectedDdc 'integration-sentinel.txt') -Value 'persistent DDC fixture' -Encoding ascii
             & Unreal.exe Build -Target='integration DDC environment fixture'
             if ($LASTEXITCODE -ne 0) {
-                throw "Unreal Build did not receive the version-scoped DDC environment; exit code $LASTEXITCODE"
+                throw "Unreal Build did not receive the local and remote DDC environment; exit code $LASTEXITCODE"
             }
 '@
 
