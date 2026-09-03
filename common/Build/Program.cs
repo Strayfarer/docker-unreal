@@ -22,15 +22,20 @@ static class Program {
             }
 
             var configuration = RuntimeConfiguration.FromEnvironment();
-            var cache = new RuntimeCache(configuration.CacheRoot, configuration.Version);
             var repository = new GitRepository(configuration.Credentials);
+            if (command.Name == EUnrealCommand.Version) {
+                var resolution = repository.Resolve(configuration.Source, configuration.Version, configuration.VersionMode);
+                Console.Out.WriteLine(resolution.Identifier);
+                return 0;
+            }
+
+            var cache = new RuntimeCache(configuration.CacheRoot, configuration.Version);
             var store = new InstallationStore(configuration.BinariesRoot);
             using var manifestInstaller = new DependencyManifestInstaller(configuration.Credentials);
             var compiler = new EngineCompiler(manifestInstaller, cache);
             var setup = new RuntimeSetup(configuration, repository, compiler, store, new ToolchainConfigurator());
             var engine = setup.Prepare();
-            if (command.Name == EUnrealCommand.Version) {
-                Console.Out.WriteLine(engine.PatchVersion);
+            if (command.Name == EUnrealCommand.Compile) {
                 return 0;
             }
 

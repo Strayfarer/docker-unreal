@@ -44,6 +44,28 @@ public sealed class RuntimeSetupTests {
     }
 
     [Test]
+    public void SameCommitResolvedByTagReusesBranchInstallation() {
+        using var directory = new TemporaryDirectory();
+        const string commit = "1111111111111111111111111111111111111111";
+        var branchRepository = new FakeRepository(commit);
+        var branchCompiler = new FakeCompiler("5.7.4");
+        var branchSetup = CreateSetup(directory, branchRepository, branchCompiler, EUnrealVersionMode.Branch, out _, out _);
+        var installed = branchSetup.Prepare();
+        var tagRepository = new FakeRepository(commit) { Identifier = "5.7.4-release" };
+        var tagCompiler = new FakeCompiler("5.7.4");
+        var tagSetup = CreateSetup(directory, tagRepository, tagCompiler, EUnrealVersionMode.Tag, out _, out _);
+
+        var reused = tagSetup.Prepare();
+
+        Assert.Multiple(() => {
+            Assert.That(reused, Is.EqualTo(installed));
+            Assert.That(tagRepository.ResolveCalls, Is.EqualTo(1));
+            Assert.That(tagRepository.Checkouts, Is.Zero);
+            Assert.That(tagCompiler.Calls, Is.Zero);
+        });
+    }
+
+    [Test]
     public void LegacyBuildProfileRecompilesPublishedEngine() {
         using var directory = new TemporaryDirectory();
         const string commit = "1111111111111111111111111111111111111111";
@@ -191,10 +213,15 @@ public sealed class RuntimeSetupTests {
     }
 
     static RuntimeSetup CreateSetup(TemporaryDirectory directory, FakeRepository repository, FakeCompiler compiler, out InstallationStore store, out FakeToolchainConfigurator toolchain) {
+        return CreateSetup(directory, repository, compiler, EUnrealVersionMode.Branch, out store, out toolchain);
+    }
+
+    static RuntimeSetup CreateSetup(TemporaryDirectory directory, FakeRepository repository, FakeCompiler compiler, EUnrealVersionMode mode, out InstallationStore store, out FakeToolchainConfigurator toolchain) {
         string sources = directory.CreateDirectory("sources");
         string binaries = directory.CreateDirectory("binaries");
         var configuration = new RuntimeConfiguration(
             UnrealVersion.Parse("VERSION", "5.7"),
+            mode,
             "https://example.invalid/UnrealEngine",
             null,
             sources,
@@ -207,14 +234,18 @@ public sealed class RuntimeSetupTests {
 
     sealed class FakeRepository : IRepository {
         public string Commit { get; set; }
+        public string Identifier { get; set; }
         public int ResolveCalls { get; private set; }
         public int Checkouts { get; private set; }
 
-        public FakeRepository(string commit) => Commit = commit;
+        public FakeRepository(string commit) {
+            Commit = commit;
+            Identifier = commit;
+        }
 
-        public string ResolveRemoteCommit(string source, UnrealVersion version) {
+        public VersionResolution Resolve(string source, UnrealVersion version, EUnrealVersionMode mode) {
             ResolveCalls++;
-            return Commit;
+            return new VersionResolution(Identifier, Commit);
         }
 
         public string Checkout(string source, UnrealVersion version, string commit, string destination) {

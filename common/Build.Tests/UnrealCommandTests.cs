@@ -21,6 +21,7 @@ public sealed class UnrealCommandTests {
     }
 
     [TestCase("--version", "Version")]
+    [TestCase("--compile", "Compile")]
     [TestCase("--help", "Help")]
     public void ParsesStandaloneInformationCommand(string selector, string expected) {
         var actual = UnrealCommand.Parse([selector]);
@@ -90,6 +91,7 @@ public sealed class UnrealCommandTests {
     [TestCase("Unknown")]
     [TestCase("--help", "unexpected")]
     [TestCase("--version", "unexpected")]
+    [TestCase("--compile", "unexpected")]
     public void RejectsMissingOrInvalidSelector(params string[] arguments) {
         Assert.That(
             () => UnrealCommand.Parse(arguments),

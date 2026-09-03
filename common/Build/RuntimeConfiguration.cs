@@ -7,6 +7,7 @@ sealed record GitCredentials(string Username, string Password);
 
 sealed record RuntimeConfiguration(
     UnrealVersion Version,
+    EUnrealVersionMode VersionMode,
     string Source,
     GitCredentials? Credentials,
     string SourcesRoot,
@@ -19,6 +20,7 @@ sealed record RuntimeConfiguration(
 
     public static RuntimeConfiguration FromEnvironment() {
         var version = UnrealVersion.Parse(EnvironmentVariableNames.UNREAL_VERSION, Environment.GetEnvironmentVariable(EnvironmentVariableNames.UNREAL_VERSION));
+        var versionMode = UnrealVersionMode.Parse(EnvironmentVariableNames.UNREAL_VERSION_MODE, Environment.GetEnvironmentVariable(EnvironmentVariableNames.UNREAL_VERSION_MODE));
         string source = Environment.GetEnvironmentVariable(EnvironmentVariableNames.UNREAL_SOURCE) ?? DEFAULT_SOURCE;
         if (string.IsNullOrWhiteSpace(source)) {
             throw new InvalidOperationException(EnvironmentVariableNames.UNREAL_SOURCE + " cannot be empty");
@@ -31,6 +33,6 @@ sealed record RuntimeConfiguration(
         }
 
         var credentials = string.IsNullOrEmpty(username) ? null : new GitCredentials(username, password!);
-        return new RuntimeConfiguration(version, source.TrimEnd('/', '\\'), credentials, @"C:\unreal\sources", @"C:\unreal\binaries");
+        return new RuntimeConfiguration(version, versionMode, source.TrimEnd('/', '\\'), credentials, @"C:\unreal\sources", @"C:\unreal\binaries");
     }
 }

@@ -9,6 +9,7 @@ enum EUnrealCommand {
     RunUAT,
     Cmd,
     Version,
+    Compile,
     Help
 }
 
@@ -21,6 +22,7 @@ sealed record UnrealCommand(EUnrealCommand Name, string[] Arguments) {
                                  Unreal RunUAT <RunUAT.bat arguments>
                                  Unreal Cmd <UnrealEditor-Cmd.exe arguments>
                                  Unreal --version
+                                 Unreal --compile
                                  Unreal --help
                                """;
 
@@ -42,6 +44,9 @@ sealed record UnrealCommand(EUnrealCommand Name, string[] Arguments) {
         }
         if (selector.Equals("--version", StringComparison.OrdinalIgnoreCase) && arguments.Length == 1) {
             return new UnrealCommand(EUnrealCommand.Version, []);
+        }
+        if (selector.Equals("--compile", StringComparison.OrdinalIgnoreCase) && arguments.Length == 1) {
+            return new UnrealCommand(EUnrealCommand.Compile, []);
         }
         if (selector.Equals("--help", StringComparison.OrdinalIgnoreCase) && arguments.Length == 1) {
             return new UnrealCommand(EUnrealCommand.Help, []);

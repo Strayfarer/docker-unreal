@@ -8,7 +8,7 @@ using System.Text.RegularExpressions;
 namespace Unreal;
 
 interface IRepository {
-    string ResolveRemoteCommit(string source, UnrealVersion version);
+    VersionResolution Resolve(string source, UnrealVersion version, EUnrealVersionMode mode);
     string Checkout(string source, UnrealVersion version, string commit, string destination);
 }
 
@@ -17,7 +17,13 @@ sealed partial class GitRepository : IRepository {
 
     public GitRepository(GitCredentials? credentials) => _credentials = credentials;
 
-    public string ResolveRemoteCommit(string source, UnrealVersion version) {
+    public VersionResolution Resolve(string source, UnrealVersion version, EUnrealVersionMode mode) => mode switch {
+        EUnrealVersionMode.Tag => ResolveTag(source, version),
+        EUnrealVersionMode.Branch => ResolveBranch(source, version),
+        _ => throw new InvalidOperationException("unsupported Unreal version mode: " + mode)
+    };
+
+    VersionResolution ResolveBranch(string source, UnrealVersion version) {
         string branchReference = "refs/heads/" + version;
         var result = RunGitCapture(Environment.CurrentDirectory, [
             "ls-remote",
@@ -31,13 +37,65 @@ sealed partial class GitRepository : IRepository {
             throw new InvalidOperationException("Git returned an invalid branch reference for Unreal Engine " + version);
         }
 
-        return fields[0].ToLowerInvariant();
+        string commit = fields[0].ToLowerInvariant();
+        return new VersionResolution(commit, commit);
+    }
+
+    VersionResolution ResolveTag(string source, UnrealVersion version) {
+        var result = RunGitCapture(Environment.CurrentDirectory, [
+            "ls-remote",
+            "--tags",
+            source
+        ]);
+        var directReferences = new Dictionary<string, string>(StringComparer.Ordinal);
+        var peeledReferences = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (string line in result.StandardOutput.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries)) {
+            string[] fields = line.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
+            if (fields.Length != 2 || !CommitExpression().IsMatch(fields[0]) || !fields[1].StartsWith("refs/tags/", StringComparison.Ordinal)) {
+                throw new InvalidOperationException("Git returned an invalid tag reference for Unreal Engine " + version);
+            }
+
+            string reference = fields[1]["refs/tags/".Length..];
+            bool peeled = reference.EndsWith("^{}", StringComparison.Ordinal);
+            string tag = peeled ? reference[..^3] : reference;
+            var references = peeled ? peeledReferences : directReferences;
+            if (!references.TryAdd(tag, fields[0].ToLowerInvariant())) {
+                throw new InvalidOperationException("Git returned duplicate references for tag " + tag);
+            }
+        }
+
+        var candidates = new List<TagCandidate>();
+        foreach (var reference in directReferences) {
+            if (!SemanticVersion.TryParse(reference.Key, out var semanticVersion)
+                || semanticVersion is null
+                || semanticVersion.Major != version.Major
+                || semanticVersion.Minor != version.Minor
+                || (semanticVersion.Prerelease.Count != 0
+                    && (semanticVersion.Prerelease.Count != 1 || semanticVersion.Prerelease[0] != "release"))) {
+                continue;
+            }
+
+            string commit = peeledReferences.GetValueOrDefault(reference.Key, reference.Value);
+            candidates.Add(new TagCandidate(reference.Key, semanticVersion, commit));
+        }
+
+        if (candidates.Count == 0) {
+            throw new InvalidOperationException("no eligible semantic-version tag exists for Unreal Engine " + version);
+        }
+
+        candidates.Sort((left, right) => right.Version.CompareTo(left.Version));
+        var selected = candidates[0];
+        if (candidates.Count > 1 && selected.Version.CompareTo(candidates[1].Version) == 0) {
+            throw new InvalidOperationException("multiple greatest tags have equal semantic-version precedence for Unreal Engine " + version + ": " + selected.Name + " and " + candidates[1].Name);
+        }
+
+        return new VersionResolution(selected.Name, selected.Commit);
     }
 
     public string Checkout(string source, UnrealVersion version, string commit, string destination) {
         Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
         if (!Directory.Exists(destination)) {
-            Clone(source, version, destination);
+            Clone(source, version, commit, destination);
         }
 
         string gitDirectory = Path.Combine(destination, ".git");
@@ -130,21 +188,21 @@ sealed partial class GitRepository : IRepository {
     static string WorktreeDirectory(string repository, UnrealVersion version) =>
         Path.Combine(Path.GetDirectoryName(repository)!, "worktrees", version.ToString());
 
-    void Clone(string source, UnrealVersion version, string destination) {
+    void Clone(string source, UnrealVersion version, string commit, string destination) {
         string parent = Path.GetDirectoryName(destination)!;
         string staging = Path.Combine(parent, ".EpicGames.UnrealEngine.cloning-" + Guid.NewGuid().ToString("N"));
         try {
-            RunGit(parent, [
-                "clone",
+            RunGit(parent, ["init", staging]);
+            RunGit(staging, ["remote", "add", "origin", source]);
+            RunGit(staging, [
+                "fetch",
                 "--depth",
                 "1",
                 "--no-tags",
-                "--single-branch",
-                "--branch",
-                version.ToString(),
-                source,
-                staging
+                "origin",
+                commit
             ]);
+            RunGit(staging, ["checkout", "--force", "-B", version.ToString(), commit]);
             Directory.Move(staging, destination);
         } finally {
             ManagedDirectory.DeleteIfPresent(staging, parent);
@@ -207,7 +265,9 @@ sealed partial class GitRepository : IRepository {
         return normalized.EndsWith(".git", StringComparison.OrdinalIgnoreCase) ? normalized[..^4] : normalized;
     }
 
-    static void Log(string message) => Console.Out.WriteLine("docker-unreal: " + message);
+    static void Log(string message) => Console.Error.WriteLine("docker-unreal: " + message);
+
+    sealed record TagCandidate(string Name, SemanticVersion Version, string Commit);
 
     [GeneratedRegex("^[0-9a-fA-F]{40}$", RegexOptions.CultureInvariant)]
     private static partial Regex CommitExpression();
