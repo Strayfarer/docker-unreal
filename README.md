@@ -53,7 +53,7 @@ The resolved commit hash is always the engine version's immutable ID and install
 2. Clone the shared repository in `C:/unreal/sources/EpicGames.UnrealEngine` and create or update a persistent worktree for the requested minor release using the supplied credentials. The original checkout is retained as one minor's worktree; additional worktrees live under `C:/unreal/sources/worktrees/<minor>`.
 3. Validate that `Engine/Build/Build.version` belongs to the requested minor release.
 4. Download Epic's version-specific dependencies. UE 5.0 receives Epic's checksum-pinned repaired dependency manifest because the manifest committed on that branch uses a retired CDN namespace.
-5. Compile a Win64 Installed Build with the matching MSVC and Windows SDK profile, using the requested minor release's persistent local Derived Data Cache.
+5. Compile a Win64 Installed Build with the matching MSVC and Windows SDK profile, using the persistent local Derived Data Cache and the optional shared Zen server.
 6. Atomically publish the completed engine under `C:/unreal/binaries/<minor>` and record its source URL, requested minor, commit ID, patch version, and Installed Build profile.
 7. Exit successfully for `--compile`, or dispatch to that installation's `Build.bat`, `RunUAT.bat`, or `UnrealEditor-Cmd.exe` with the original arguments and return its exit code.
 
