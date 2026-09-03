@@ -5,7 +5,7 @@ namespace Unreal.Tests;
 
 public sealed class RuntimeCacheTests {
     [Test]
-    public void CreatesVersionedDerivedDataAndUbaCachesAndSharedPackageCaches() {
+    public void CreatesSharedDerivedDataAndVersionedUbaCachesAndSharedPackageCaches() {
         using var directory = new TemporaryDirectory();
         string root = Path.Combine(directory.Path, "cache");
         var cache = new RuntimeCache(root, UnrealVersion.Parse("VERSION", "5.7"));
@@ -13,7 +13,7 @@ public sealed class RuntimeCacheTests {
         cache.Prepare();
 
         Assert.Multiple(() => {
-            Assert.That(cache.DerivedData, Is.EqualTo(Path.Combine(root, "ddc", "5.7")));
+            Assert.That(cache.DerivedData, Is.EqualTo(Path.Combine(root, "ddc")));
             Assert.That(cache.Environment["UE-LocalDataCachePath"], Is.EqualTo(cache.DerivedData));
             Assert.That(cache.Uba, Is.EqualTo(Path.Combine(root, "uba", "5.7")));
             Assert.That(cache.Environment["UBA_ROOT"], Is.EqualTo(cache.Uba));
@@ -28,17 +28,29 @@ public sealed class RuntimeCacheTests {
     }
 
     [Test]
-    public void IsolatesDerivedDataByRequestedEngineVersion() {
+    public void SharesDerivedDataAcrossRequestedEngineVersions() {
         using var directory = new TemporaryDirectory();
         string root = Path.Combine(directory.Path, "cache");
         var first = new RuntimeCache(root, UnrealVersion.Parse("VERSION", "5.7"));
         var second = new RuntimeCache(root, UnrealVersion.Parse("VERSION", "5.8"));
 
         Assert.Multiple(() => {
-            Assert.That(first.DerivedData, Is.EqualTo(Path.Combine(root, "ddc", "5.7")));
-            Assert.That(second.DerivedData, Is.EqualTo(Path.Combine(root, "ddc", "5.8")));
-            Assert.That(second.DerivedData, Is.Not.EqualTo(first.DerivedData));
+            Assert.That(first.DerivedData, Is.EqualTo(Path.Combine(root, "ddc")));
+            Assert.That(second.DerivedData, Is.EqualTo(first.DerivedData));
+            Assert.That(first.Environment, Does.Not.ContainKey("UE-ZenSharedDataCacheHost"));
         });
+    }
+
+    [Test]
+    public void MapsRemoteDdcToZenSharedHostOverride() {
+        using var directory = new TemporaryDirectory();
+        var cache = new RuntimeCache(
+            Path.Combine(directory.Path, "cache"),
+            UnrealVersion.Parse("VERSION", "5.8"),
+            "  http://ddc.example.invalid:8558/  "
+        );
+
+        Assert.That(cache.Environment["UE-ZenSharedDataCacheHost"], Is.EqualTo("http://ddc.example.invalid:8558/"));
     }
 
     [Test]

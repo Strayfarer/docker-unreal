@@ -17,7 +17,7 @@ sealed class RuntimeSetup {
         _compiler = compiler;
         _store = store;
         _toolchain = toolchain;
-        _cache = new RuntimeCache(configuration.CacheRoot, configuration.Version);
+        _cache = new RuntimeCache(configuration.CacheRoot, configuration.Version, configuration.Ddc);
     }
 
     public InstalledEngine Prepare() {

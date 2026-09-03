@@ -29,7 +29,7 @@ static class Program {
                 return 0;
             }
 
-            var cache = new RuntimeCache(configuration.CacheRoot, configuration.Version);
+            var cache = new RuntimeCache(configuration.CacheRoot, configuration.Version, configuration.Ddc);
             var store = new InstallationStore(configuration.BinariesRoot);
             using var manifestInstaller = new DependencyManifestInstaller(configuration.Credentials);
             var compiler = new EngineCompiler(manifestInstaller, cache);

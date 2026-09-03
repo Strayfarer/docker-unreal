@@ -11,7 +11,8 @@ sealed record RuntimeConfiguration(
     string Source,
     GitCredentials? Credentials,
     string SourcesRoot,
-    string BinariesRoot
+    string BinariesRoot,
+    string? Ddc = null
 ) {
     public const string DEFAULT_SOURCE = "https://github.com/EpicGames/UnrealEngine";
 
@@ -25,6 +26,8 @@ sealed record RuntimeConfiguration(
         if (string.IsNullOrWhiteSpace(source)) {
             throw new InvalidOperationException(EnvironmentVariableNames.UNREAL_SOURCE + " cannot be empty");
         }
+        string? ddc = Environment.GetEnvironmentVariable(EnvironmentVariableNames.UNREAL_DDC);
+        ddc = string.IsNullOrWhiteSpace(ddc) ? null : ddc.Trim();
 
         string? username = Environment.GetEnvironmentVariable(EnvironmentVariableNames.UNREAL_CREDENTIALS_USR);
         string? password = Environment.GetEnvironmentVariable(EnvironmentVariableNames.UNREAL_CREDENTIALS_PSW);
@@ -33,6 +36,6 @@ sealed record RuntimeConfiguration(
         }
 
         var credentials = string.IsNullOrEmpty(username) ? null : new GitCredentials(username, password!);
-        return new RuntimeConfiguration(version, versionMode, source.TrimEnd('/', '\\'), credentials, @"C:\unreal\sources", @"C:\unreal\binaries");
+        return new RuntimeConfiguration(version, versionMode, source.TrimEnd('/', '\\'), credentials, @"C:\unreal\sources", @"C:\unreal\binaries", ddc);
     }
 }

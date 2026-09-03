@@ -66,6 +66,7 @@ All source preparation and engine compilation is serialized by the exclusive fil
 - `UNREAL_VERSION` is required and declares a numeric minor release such as `5.0` or `5.8`.
 - `UNREAL_VERSION_MODE` selects `tag` or `branch` resolution and defaults to `tag`.
 - `UNREAL_SOURCE` defaults to `https://github.com/EpicGames/UnrealEngine`.
+- `UNREAL_DDC` optionally specifies a shared Zen server hostname or URL, such as `http://ddc.example.com:8558`.
 - `UNREAL_CREDENTIALS_USR` and `UNREAL_CREDENTIALS_PSW` provide the Git username and personal access token. The account must be linked to an Epic Games account and able to read `EpicGames/UnrealEngine`.
 
 Credentials are supplied to Git through `GIT_ASKPASS`; they are never placed in a command-line URL, source marker, image layer, or forwarded to the selected Unreal Engine tool.
@@ -74,7 +75,9 @@ Credentials are supplied to Git through `GIT_ASKPASS`; they are never placed in 
 
 Always mount all three advertised locations. Unreal source, downloaded dependencies, compiler caches, intermediates, and Installed Builds are very large. GitDependencies packs are shared in `C:/unreal/cache/gitdeps`, NuGet and .NET caches in `C:/unreal/cache/nuget` and `C:/unreal/cache/dotnet`, and Unreal Build Accelerator storage is isolated per minor under `C:/unreal/cache/uba/<minor>`.
 
-The launcher sets Unreal's supported `UE-LocalDataCachePath` override to `C:/unreal/cache/ddc/<minor>` for Installed Build compilation and every forwarded engine tool, where `<minor>` is the normalized `UNREAL_VERSION`. This keeps the DDC in the persistent `unreal-cache` volume while preventing different requested engine minors from sharing one cache. Unreal 5.4 and newer use a local Zen store and place its data in a `Zen` subdirectory of that override; older versions use the same override as their filesystem DDC root. Packaged Installed Build DDC generation remains disabled because the writable persistent cache is populated on demand. See Epic's [Derived Data Cache documentation](https://dev.epicgames.com/documentation/unreal-engine/using-derived-data-cache-in-unreal-engine).
+The launcher sets Unreal's supported `UE-LocalDataCachePath` override to the unversioned `C:/unreal/cache/ddc` directory for Installed Build compilation and every forwarded engine tool. DDC keys carry the compatibility information needed to share this content-addressed cache across `UNREAL_VERSION` values, so partitioning it by engine minor would only reduce reuse. Unreal 5.4 and newer use a local Zen store and place its data in a `Zen` subdirectory of that override; older versions use the same override as their filesystem DDC root.
+
+When `UNREAL_DDC` is set, the launcher also supplies its value through Epic's `UE-ZenSharedDataCacheHost` override. Unreal keeps the local cache in its DDC hierarchy, automatically deactivates an unavailable or excessively slow shared Zen layer, and falls back to `C:/unreal/cache/ddc`. The stock Zen shared layer is available from Unreal 5.4 onward; older supported engines ignore the host override and use the persistent local cache. Packaged Installed Build DDC generation remains disabled because the writable caches are populated on demand. See Epic's [Derived Data Cache documentation](https://dev.epicgames.com/documentation/unreal-engine/using-derived-data-cache-in-unreal-engine) and [shared Zen setup guide](https://dev.epicgames.com/documentation/unreal-engine/set-up-zen-storage-server-as-shared-ddc-for-unreal-engine).
 
 NuGet vulnerability auditing is disabled only for Unreal's historical, commit-pinned build projects. Otherwise newly published advisories can become warnings-as-errors and make an unchanged engine commit stop compiling over time. Package restore integrity checks and normal compiler warnings and errors remain enabled.
 
@@ -86,6 +89,7 @@ services:
       UNREAL_VERSION: "5.8"
       UNREAL_VERSION_MODE: tag
       UNREAL_SOURCE: https://github.com/EpicGames/UnrealEngine
+      UNREAL_DDC: http://ddc.example.com:8558
       UNREAL_CREDENTIALS_USR: ${UNREAL_CREDENTIALS_USR}
       UNREAL_CREDENTIALS_PSW: ${UNREAL_CREDENTIALS_PSW}
     volumes:
@@ -125,6 +129,6 @@ $env:UNREAL_CREDENTIALS_PSW = '<github-token>'
 ./windows/test-images.ps1 -DockerContext dende
 ```
 
-The integration contract uses the persistent `unreal-binaries`, `unreal-cache`, and `unreal-sources` volumes and exercises all six public command forms. It verifies branch and tag resolution, verifies that `--version` does not materialize an engine, verifies cross-mode reuse when both modes resolve the same commit, exercises `--compile` against an exact precompiled installation, and verifies the version-scoped DDC environment. Each real-engine stage then lets `Unreal Build` either reuse the persistent precompiled engine or compile it on a cache miss. It builds the editor target for `test-files/EmptyGame`, compiles the fixture's Blueprint through `Unreal Cmd`, and uses `Unreal RunUAT BuildCookRun` to archive a Shipping executable and pak file. The Explorer entry points are `docker-build-windows.bat` and `docker-test-windows.bat`; they are interactive and pause before closing.
+The integration contract uses the persistent `unreal-binaries`, `unreal-cache`, and `unreal-sources` volumes and exercises all six public command forms. It verifies branch and tag resolution, verifies that `--version` does not materialize an engine, verifies cross-mode reuse when both modes resolve the same commit, exercises `--compile` against an exact precompiled installation, and verifies the unversioned local and optional shared DDC environment. Each real-engine stage then lets `Unreal Build` either reuse the persistent precompiled engine or compile it on a cache miss. It builds the editor target for `test-files/EmptyGame`, compiles the fixture's Blueprint through `Unreal Cmd`, and uses `Unreal RunUAT BuildCookRun` to archive a Shipping executable and pak file. The Explorer entry points are `docker-build-windows.bat` and `docker-test-windows.bat`; they are interactive and pause before closing.
 
 Only images under the disposable `tmp/unreal` namespace may be built locally. Unreal Engine development images are governed by the Unreal Engine EULA and must not be distributed to users who are not permitted to access their contents.

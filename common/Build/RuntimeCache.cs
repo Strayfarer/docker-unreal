@@ -17,9 +17,9 @@ sealed class RuntimeCache {
 
     public IReadOnlyDictionary<string, string> Environment { get; }
 
-    public RuntimeCache(string root, UnrealVersion version) {
+    public RuntimeCache(string root, UnrealVersion version, string? remoteDdc = null) {
         Root = root;
-        DerivedData = Path.Combine(root, "ddc", version.ToString());
+        DerivedData = Path.Combine(root, "ddc");
         GitDependencies = Path.Combine(root, "gitdeps");
         Uba = Path.Combine(root, "uba", version.ToString());
         NuGetPackages = Path.Combine(root, "nuget", "packages");
@@ -27,7 +27,7 @@ sealed class RuntimeCache {
         NuGetPlugins = Path.Combine(root, "nuget", "plugins");
         NuGetScratch = Path.Combine(root, "nuget", "scratch");
         DotNetHome = Path.Combine(root, "dotnet");
-        Environment = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) {
+        var environment = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) {
             ["UE-LocalDataCachePath"] = DerivedData,
             ["UBA_ROOT"] = Uba,
             ["NUGET_PACKAGES"] = NuGetPackages,
@@ -37,6 +37,10 @@ sealed class RuntimeCache {
             ["NuGetAudit"] = "false",
             ["DOTNET_CLI_HOME"] = DotNetHome
         };
+        if (!string.IsNullOrWhiteSpace(remoteDdc)) {
+            environment["UE-ZenSharedDataCacheHost"] = remoteDdc.Trim();
+        }
+        Environment = environment;
     }
 
     public void Prepare() {
