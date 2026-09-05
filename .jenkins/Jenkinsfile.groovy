@@ -162,28 +162,11 @@ def testVersionResolution(unrealDdc) {
 }
 
 def testImage(unrealVersion, expectedTag) {
-    docker.image(candidateImage()).inside('-v unreal-binaries:C:/unreal/binaries -v unreal-cache:C:/unreal/cache -v unreal-sources:C:/unreal/sources') {
-        def project = '%WORKSPACE%\\test-files\\EmptyGame\\EmptyGame.uproject'
-        def archive = "%WORKSPACE%\\.jenkins\\artifacts\\${unrealVersion}"
-
-        exec 'Unreal --help'
-        def resolvedTag = execStdout 'Unreal --version'
-        assertValue(resolvedTag, expectedTag, "Unreal v${unrealVersion} resolved tag")
-
-        // Build ensures the engine on a cold volume and takes the precompiled happy path on a cache hit.
-        exec "Unreal Build -Target=\"EmptyGameEditor Win64 Development\" -Project=\"${project}\" -WaitMutex"
-        exec "Unreal Cmd \"${project}\" -run=CompileAllBlueprints -AllowListFile=Config/BlueprintAllowList.txt -Unattended -NullRHI -NoSplash -NoP4"
-
-        dir(".jenkins/artifacts/${unrealVersion}") {
-            deleteDir()
-        }
-        exec "Unreal RunUAT BuildCookRun -Project=\"${project}\" -ClientConfig=Shipping -TargetPlatform=Win64 -NoP4 -Build -Cook -AllMaps -Stage -Pak -Package -Archive -ArchiveDirectory=\"${archive}\" -Unattended -UTF8Output"
-        def packagedExecutables = findFiles(glob: ".jenkins/artifacts/${unrealVersion}/**/EmptyGame.exe")
-        assertValue(
-            packagedExecutables.size() > 0,
-            true,
-            "Unreal v${unrealVersion} packaged Shipping executable"
-        )
+    def container = execStdout "docker run --detach --tty --volumes-from agents_jenkins-agent --workdir=%WORKSPACE% --env WORKSPACE --env UNREAL_VERSION --env UNREAL_VERSION_MODE --env UNREAL_SOURCE --env UNREAL_DDC --env UNREAL_CREDENTIALS_USR --env UNREAL_CREDENTIALS_PSW ${candidateImage()} cmd.exe"
+    try {
+        exec "docker exec ${container} powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File .jenkins/TestImage.ps1 -UnrealVersion ${unrealVersion} -ExpectedTag ${expectedTag}"
+    } finally {
+        exec "docker rm --force ${container}"
     }
 }
 
