@@ -162,7 +162,7 @@ def testVersionResolution(unrealDdc) {
 }
 
 def testImage(unrealVersion, expectedTag) {
-    def container = execStdout "docker run --detach --tty --volumes-from agents_jenkins-agent --workdir=%WORKSPACE% --env WORKSPACE --env UNREAL_VERSION --env UNREAL_VERSION_MODE --env UNREAL_SOURCE --env UNREAL_DDC --env UNREAL_CREDENTIALS_USR --env UNREAL_CREDENTIALS_PSW ${candidateImage()} cmd.exe"
+    def container = execStdout "docker run --detach --tty --volumes-from agents_jenkins-agent --workdir=\"${env.WORKSPACE}\" --env WORKSPACE --env UNREAL_VERSION --env UNREAL_VERSION_MODE --env UNREAL_SOURCE --env UNREAL_DDC --env UNREAL_CREDENTIALS_USR --env UNREAL_CREDENTIALS_PSW ${candidateImage()} cmd.exe"
     try {
         exec "docker exec ${container} powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File .jenkins/TestImage.ps1 -UnrealVersion ${unrealVersion} -ExpectedTag ${expectedTag}"
     } finally {
