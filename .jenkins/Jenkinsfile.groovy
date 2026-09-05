@@ -8,8 +8,11 @@ def candidateImage() {
     return "$DOCKER_NAMESPACE/$DOCKER_IMAGE"
 }
 
-def testVersionResolution() {
-    withEnv(["UNREAL_RESOLVER_IMAGE=${candidateImage()}"]) {
+def testVersionResolution(unrealDdc) {
+    withEnv([
+        "UNREAL_DDC=${unrealDdc}",
+        "UNREAL_RESOLVER_IMAGE=${candidateImage()}"
+    ]) {
         exec '''
             $containerScript = @'
             $ErrorActionPreference = 'Stop'
@@ -81,11 +84,27 @@ def testVersionResolution() {
             Set-Content -LiteralPath (Join-Path $dotnetDirectory 'dotnet.exe') -Value 'integration fixture' -Encoding ascii
             @(
                 '@echo off',
-                'if /I not "%UE-LocalDataCachePath%"=="C:\unreal\cache\ddc" exit /b 92',
-                'if not exist "%UE-LocalDataCachePath%\integration-sentinel.txt" exit /b 93',
-                'if /I not "%UE-ZenSharedDataCacheHost%"=="http://ddc.example.invalid:8558" exit /b 94',
-                'exit /b 0'
+                'powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "%~dp0VerifyDdc.ps1" %*',
+                'exit /b %ERRORLEVEL%'
             ) | Set-Content -LiteralPath (Join-Path $batchDirectory 'Build.bat') -Encoding ascii
+            @(
+                '$ErrorActionPreference = "Stop"',
+                '$expectedLocal = [IO.Path]::GetFullPath("C:/unreal/cache/ddc")',
+                'if ([IO.Path]::GetFullPath($env:UE-LocalDataCachePath) -ne $expectedLocal) { throw "Unexpected local DDC: $env:UE-LocalDataCachePath" }',
+                'if ($args -contains "-Target=integration-shared-ddc") {',
+                '    if ($env:UE-ZenSharedDataCacheHost -ne $env:UNREAL_DDC) { throw "UNREAL_DDC was not mapped to the Zen shared host override" }',
+                '    $response = Invoke-WebRequest -UseBasicParsing -Uri $env:UE-ZenSharedDataCacheHost -TimeoutSec 15',
+                '    if ([int]$response.StatusCode -ne 200) { throw "Shared DDC returned HTTP $($response.StatusCode)" }',
+                '    exit 0',
+                '}',
+                'if ($args -contains "-Target=integration-local-ddc-fallback") {',
+                '    if (Test-Path Env:UE-ZenSharedDataCacheHost) { throw "Zen shared host override remained set without UNREAL_DDC" }',
+                '    New-Item -ItemType Directory -Path $env:UE-LocalDataCachePath -Force | Out-Null',
+                '    Set-Content -LiteralPath (Join-Path $env:UE-LocalDataCachePath "integration-sentinel.txt") -Value "local fallback" -Encoding ascii',
+                '    exit 0',
+                '}',
+                'throw "Unexpected DDC integration target: $args"'
+            ) | Set-Content -LiteralPath (Join-Path $batchDirectory 'VerifyDdc.ps1') -Encoding ascii
             Set-Content -LiteralPath (Join-Path $buildDirectory 'Build.version') -Value '{"MajorVersion":5,"MinorVersion":8,"PatchVersion":10}' -Encoding ascii
             Set-Content -LiteralPath (Join-Path $engineRoot 'branch-resolved.marker') -Value $resolvedCommit -Encoding ascii
             [ordered]@{
@@ -97,7 +116,6 @@ def testVersionResolution() {
             } | ConvertTo-Json -Compress | Set-Content -LiteralPath (Join-Path $engineRoot '.docker-unreal.json') -Encoding utf8
 
             Remove-Item Env:UNREAL_VERSION_MODE
-            $env:UNREAL_DDC = 'http://ddc.example.invalid:8558'
             & Unreal.exe --compile
             if ($LASTEXITCODE -ne 0) {
                 throw "Unreal --compile failed with exit code $LASTEXITCODE"
@@ -118,14 +136,22 @@ def testVersionResolution() {
             if (Test-Path -LiteralPath (Join-Path $expectedDdc '5.8')) {
                 throw 'The persistent local DDC was partitioned by UNREAL_VERSION'
             }
-            Set-Content -LiteralPath (Join-Path $expectedDdc 'integration-sentinel.txt') -Value 'persistent DDC fixture' -Encoding ascii
-            & Unreal.exe Build -Target='integration DDC environment fixture'
+            & Unreal.exe Build -Target=integration-shared-ddc
             if ($LASTEXITCODE -ne 0) {
-                throw "Unreal Build did not receive the local and remote DDC environment; exit code $LASTEXITCODE"
+                throw "Unreal Build did not connect to the configured shared DDC; exit code $LASTEXITCODE"
+            }
+
+            Remove-Item Env:UNREAL_DDC
+            & Unreal.exe Build -Target=integration-local-ddc-fallback
+            if ($LASTEXITCODE -ne 0) {
+                throw "Unreal Build did not fall back to the local DDC; exit code $LASTEXITCODE"
+            }
+            if (-not (Test-Path -LiteralPath (Join-Path $expectedDdc 'integration-sentinel.txt'))) {
+                throw 'The local DDC fallback did not retain derived data'
             }
 '@
 
-            & docker run --rm $env:UNREAL_RESOLVER_IMAGE powershell.exe -NoLogo -NoProfile -NonInteractive -Command $containerScript
+            & docker run --rm --env UNREAL_DDC $env:UNREAL_RESOLVER_IMAGE powershell.exe -NoLogo -NoProfile -NonInteractive -Command $containerScript
             if ($LASTEXITCODE -ne 0) {
                 throw "Resolver contract container failed with exit code $LASTEXITCODE"
             }
@@ -179,6 +205,7 @@ def unrealVersions = [
     [minor: '5.7', tag: '5.7.4-release']
 ]
 def unrealSource = 'https://github.com/EpicGames/UnrealEngine'
+def unrealDdc = 'http://192.168.194.110:8558'
 def unrealCredentials = 'Faulo-GitHub'
 
 stage('Integration Tests') {
@@ -191,7 +218,7 @@ stage('Integration Tests') {
                 stage('Version resolution') {
                     withEnv(["DOCKER_NAMESPACE=${dockerNamespace}"]) {
                         withEnvFile {
-                            testVersionResolution()
+                            testVersionResolution(unrealDdc)
                         }
                     }
                 }
@@ -209,7 +236,8 @@ stage('Integration Tests') {
                                 "DOCKER_NAMESPACE=${dockerNamespace}",
                                 "UNREAL_VERSION=${unrealVersion}",
                                 'UNREAL_VERSION_MODE=tag',
-                                "UNREAL_SOURCE=${unrealSource}"
+                                "UNREAL_SOURCE=${unrealSource}",
+                                "UNREAL_DDC=${unrealDdc}"
                             ]) {
                                 withEnvFile {
                                  withCredentials([usernamePassword(credentialsId: unrealCredentials, usernameVariable: 'UNREAL_CREDENTIALS_USR', passwordVariable: 'UNREAL_CREDENTIALS_PSW')]) {
