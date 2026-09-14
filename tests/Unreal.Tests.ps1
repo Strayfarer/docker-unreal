@@ -24,14 +24,21 @@ param(
 
 BeforeAll {
     . (Join-Path $PSScriptRoot '../.jenkins/Docker.ps1')
+
+    $container = Invoke-DockerOutput `
+        -Context $Context `
+        -Arguments @('run', '--detach', '--tty', $Image, 'cmd.exe') `
+        -RunArguments $DockerRunArguments
 }
 
-Describe "Docker integration environment [$Context, $Image]" {
-    It "reaches docker daemon $Context" {
-        Invoke-Docker -Context $Context -Arguments @('info')
+AfterAll {
+    if ($container) {
+        Invoke-Docker -Context $Context -Arguments @('rm', '--force', $container)
     }
+}
 
-    It "has image $Image" {
-        Invoke-Docker -Context $Context -Arguments @('image', 'inspect', $Image)
+Describe "Unreal container [$Context, $Image]" {
+    It "displays help" {
+        Invoke-Docker -Context $Context -Arguments @('exec', $container, 'Unreal.exe', '--help')
     }
 }
