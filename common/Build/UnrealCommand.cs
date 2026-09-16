@@ -23,12 +23,12 @@ sealed record UnrealCommand(EUnrealCommand Name, string[] Arguments) {
                                  Unreal Cmd <UnrealEditor-Cmd.exe arguments>
                                  Unreal --version
                                  Unreal --compile
-                                 Unreal --help
+                                 Unreal help
                                """;
 
     public static UnrealCommand Parse(string[] arguments) {
         if (arguments.Length == 0) {
-            throw new InvalidOperationException("an Unreal command is required; run 'Unreal --help' for usage");
+            throw new InvalidOperationException("an Unreal command is required; run 'Unreal help' for usage");
         }
 
         string selector = arguments[0];
@@ -48,11 +48,11 @@ sealed record UnrealCommand(EUnrealCommand Name, string[] Arguments) {
         if (selector.Equals("--compile", StringComparison.OrdinalIgnoreCase) && arguments.Length == 1) {
             return new UnrealCommand(EUnrealCommand.Compile, []);
         }
-        if (selector.Equals("--help", StringComparison.OrdinalIgnoreCase) && arguments.Length == 1) {
+        if (selector.Equals("help", StringComparison.OrdinalIgnoreCase) && arguments.Length == 1) {
             return new UnrealCommand(EUnrealCommand.Help, []);
         }
 
-        throw new InvalidOperationException("unknown Unreal command: " + selector + "; run 'Unreal --help' for usage");
+        throw new InvalidOperationException("unknown Unreal command: " + selector + "; run 'Unreal help' for usage");
     }
 
     static string[] RepairSplitOptionExtensions(string[] arguments) {

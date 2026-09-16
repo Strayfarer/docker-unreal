@@ -25,12 +25,14 @@ Unreal RunUAT <RunUAT.bat arguments>
 Unreal Cmd <UnrealEditor-Cmd.exe arguments>
 Unreal --version
 Unreal --compile
-Unreal --help
+Unreal help
 ```
 
 `Build`, `RunUAT`, and `Cmd` ensure that the selected engine is compiled, pass all following arguments to its corresponding tool, and return the tool's native exit code. `RunUAT` initializes the engine's bundled .NET environment before invoking `Engine/Build/BatchFiles/RunUAT.bat`.
 
-`--version` resolves and prints the identifier that would be compiled, then exits without preparing source or compiling the engine. `--compile` resolves the same identifier and ensures its Installed Build is present without invoking an engine tool. It reuses an exact published build when one already exists; it does not force an otherwise unnecessary rebuild. `--help` lists every command and its usage without requiring runtime configuration.
+`--version` resolves and prints the identifier that would be compiled, then exits without preparing source or compiling the engine. `--compile` resolves the same identifier and ensures its Installed Build is present without invoking an engine tool. It reuses an exact published build when one already exists; it does not force an otherwise unnecessary rebuild. `help` lists every command and its usage without requiring runtime configuration.
+
+The image deliberately declares no Docker `ENTRYPOINT` and stores its complete default invocation in exec-form `CMD ["unreal", "help"]`. This is a Jenkins Docker Pipeline compatibility guarantee: on Windows, `docker.image(image).inside { ... }` can replace the command with its `cmd.exe` keeper process and run build steps through `docker exec`. Any command supplied to `docker run` replaces the launcher completely. Invoke the launcher explicitly when overriding the command, for example `docker run IMAGE unreal Build ...`.
 
 ## Version resolution
 

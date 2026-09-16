@@ -51,4 +51,4 @@ VOLUME ["C:/unreal/binaries", "C:/unreal/cache", "C:/unreal/sources"]
 
 WORKDIR C:/workspace
 
-CMD ["Unreal.exe", "--help"]
+CMD ["unreal", "help"]
