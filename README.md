@@ -112,7 +112,7 @@ Cleanup of obsolete source intermediates or no-longer-used minor installations i
 Launcher unit tests do not require Docker:
 
 ```powershell
-dotnet test docker-unreal.sln --configuration Release
+dotnet test docker-unreal.sln --configuration Release --logger junit
 ```
 
 Build the disposable candidate image on Dende:
@@ -134,3 +134,9 @@ $env:UNREAL_CREDENTIALS_PSW = '<github-token>'
 The integration contract uses the persistent `unreal-binaries`, `unreal-cache`, and `unreal-sources` volumes and exercises all six public command forms. It verifies branch and tag resolution, verifies that `--version` does not materialize an engine, verifies cross-mode reuse when both modes resolve the same commit, and exercises `--compile` against an exact precompiled installation. Every real-engine stage is configured with the CI shared Zen DDC and lets `Unreal Build` either reuse the persistent precompiled engine or compile it on a cache miss. The isolated resolver fixture verifies the shared-DDC environment mapping and live HTTP connection, then runs one small check without `UNREAL_DDC` to verify the internal `C:/unreal/cache/ddc` fallback. Each real-engine stage builds the editor target for `test-files/EmptyGame`, compiles the fixture's Blueprint through `Unreal Cmd`, and uses `Unreal RunUAT BuildCookRun` to archive a Shipping executable and pak file. The Explorer entry points are `docker-build-windows.bat` and `docker-test-windows.bat`; they are interactive and pause before closing.
 
 Only images under the disposable `tmp/unreal` namespace may be built locally. Unreal Engine development images are governed by the Unreal Engine EULA and must not be distributed to users who are not permitted to access their contents.
+
+Jenkins runs `dotnet test --logger junit` in the .NET 9 SDK container on a
+Linux agent and publishes `**/TestResults.xml` with its native `junit` step.
+Each test project writes its report to `TestResults/TestResults.xml`.
+Image integration tests continue to use the targets and variants configured
+in `.jenkins/pesterProject.properties`.
