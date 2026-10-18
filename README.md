@@ -15,6 +15,11 @@ cleanup of run-specific staging tags. `docker.json` defines the recursive
 schema-3 matrix and reads the publication namespace and image from `.env`.
 Each prefix index contains the configured LTSC 2019 image; no additional builds
 are needed for the shorter tags. Windows OS-version metadata is preserved.
+The configuration enables `cleanupWindowsRunner` (shared workflow v3.3.0 or
+newer) to free space by removing preinstalled Visual Studio from disposable
+GitHub-hosted Windows runners before cache pulls and builds. The workflow also
+skips published Windows caches whose layers do not include the current base.
+Self-hosted runners skip cleanup; the image installs its own build tools.
 The `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN` repository secrets authenticate
 publication separately from the namespace; the token must permit both pushes
 and deletion of the workflow's staging tags. Unrelated historical tags are

@@ -3,6 +3,7 @@
     "namespace": "$DOCKER_NAMESPACE",
     "image": "$DOCKER_IMAGE",
     "context": ".",
+    "cleanupWindowsRunner": true,
     "matrix": {
         "product": {
             "tags": {
