@@ -2,6 +2,24 @@
 
 This repository builds one Windows Docker image that resolves a requested Unreal Engine minor release and compiles a Win64 Installed Build on demand. Resolution can follow either the current head of the minor branch or the highest eligible semantic-version tag for that minor. Source, caches, and Installed Builds live in named volumes and are reused by later containers.
 
+## Published tags
+
+`faulo/unreal:latest`, `faulo/unreal:latest-windows`, and
+`faulo/unreal:latest-windows-ltsc2019` each contain the same Windows amd64
+image based on the full Windows LTSC 2019 base. Use the exact leaf tag when
+selecting the OS release explicitly. No Linux image is published.
+
+GitHub Actions uses the shared [workflows-docker v3 workflow](https://github.com/Faulo/workflows-docker/tree/v3)
+for native builds, caching, publication, digest and platform verification, and
+cleanup of run-specific staging tags. `docker.json` defines the recursive
+schema-3 matrix and reads the publication namespace and image from `.env`.
+Each prefix index contains the configured LTSC 2019 image; no additional builds
+are needed for the shorter tags. Windows OS-version metadata is preserved.
+The `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN` repository secrets authenticate
+publication separately from the namespace; the token must permit both pushes
+and deletion of the workflow's staging tags. Unrelated historical tags are
+retained. Project tests run in Jenkins.
+
 ## Image contents
 
 The image provides:
@@ -86,7 +104,7 @@ NuGet vulnerability auditing is disabled only for Unreal's historical, commit-pi
 ```yaml
 services:
   unreal:
-    image: faulo/unreal:latest
+    image: faulo/unreal:latest-windows-ltsc2019
     environment:
       UNREAL_VERSION: "5.8"
       UNREAL_VERSION_MODE: tag
@@ -115,23 +133,29 @@ Launcher unit tests do not require Docker:
 dotnet test docker-unreal.sln --configuration Release --logger junit
 ```
 
-Build the disposable candidate image on Dende:
+Build the disposable candidate image on Popo:
 
 ```powershell
-./windows/build-images.ps1 -DockerContext dende
+./windows/build-images.ps1 -DockerContext popo
 ```
 
-The script always passes the Docker context explicitly, uses the repository root as build context, selects the legacy Windows builder required by Dende, and refuses non-`tmp` namespaces.
+The script always passes the Docker context explicitly, uses the repository
+root as build context, selects the legacy Windows builder required by the
+LTSC 2019 daemon, and refuses non-`tmp` namespaces.
 
-To run the same three selectors as the integration contract, export credentials and run:
+Run the same Pester integration suite used by Jenkins against the candidate:
 
 ```powershell
 $env:UNREAL_CREDENTIALS_USR = '<github-user>'
 $env:UNREAL_CREDENTIALS_PSW = '<github-token>'
-./windows/test-images.ps1 -DockerContext dende
+pwsh ./.jenkins/Invoke-IntegrationTests.ps1 -Namespace tmp -Context popo
 ```
 
-The integration contract uses the persistent `unreal-binaries`, `unreal-cache`, and `unreal-sources` volumes and exercises all six public command forms. It verifies branch and tag resolution, verifies that `--version` does not materialize an engine, verifies cross-mode reuse when both modes resolve the same commit, and exercises `--compile` against an exact precompiled installation. Every real-engine stage is configured with the CI shared Zen DDC and lets `Unreal Build` either reuse the persistent precompiled engine or compile it on a cache miss. The isolated resolver fixture verifies the shared-DDC environment mapping and live HTTP connection, then runs one small check without `UNREAL_DDC` to verify the internal `C:/unreal/cache/ddc` fallback. Each real-engine stage builds the editor target for `test-files/EmptyGame`, compiles the fixture's Blueprint through `Unreal Cmd`, and uses `Unreal RunUAT BuildCookRun` to archive a Shipping executable and pak file. The Explorer entry points are `docker-build-windows.bat` and `docker-test-windows.bat`; they are interactive and pause before closing.
+The current suite checks Docker daemon and image availability, the default
+command and entrypoint contract, the Jenkins `cmd.exe` keeper process, and
+launcher help. It mounts the persistent `unreal-binaries`, `unreal-cache`, and
+`unreal-sources` volumes using the arguments in `.env`. It does not compile an
+engine or package a project.
 
 Only images under the disposable `tmp/unreal` namespace may be built locally. Unreal Engine development images are governed by the Unreal Engine EULA and must not be distributed to users who are not permitted to access their contents.
 
