@@ -34,6 +34,13 @@ The image provides:
 - Visual Studio 2019 and 2022 Build Tools, including the MSVC 14.29, 14.38, and 14.44 toolchains.
 - Windows SDK 10.0.18362 and 10.0.22621, the .NET Framework SDK and legacy reference assemblies, and the June 2010 DirectX runtime files required by Unreal's Windows tools.
 
+WinRM starts on demand. SSDP Discovery is disabled because its automatic start
+retains host Code Integrity pool memory after a process-isolated container stops.
+This removes SSDP/UPnP device discovery; ordinary TCP connections are unaffected.
+If needed, start WinRM explicitly with `Start-Service WinRM`. A derived image can
+restore SSDP with `sc.exe config SSDPSRV start= demand`, but starting it may
+restore the host-memory retention on affected Windows builds.
+
 The image supports minor selectors from Unreal Engine 5.0 onward. UE4 is not supported because its older compiler, SDK, .NET, and BuildGraph matrix would materially expand the image and installer; 5.0 is the supported floor.
 
 Only Win64 host Installed Builds are compiled. Client, server, packaged derived-data-cache, full debug information, signing, and Datasmith build variants are disabled. The supported game configurations are Development and Shipping.

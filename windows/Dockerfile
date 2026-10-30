@@ -35,6 +35,12 @@ RUN & C:/docker-unreal/windows/install-prerequisites.ps1 -Phase WindowsSdks
 RUN & C:/docker-unreal/windows/install-prerequisites.ps1 -Phase Common; \
     & C:/docker-unreal/windows/install-netfx-sdk.ps1
 
+# Container startup must not retain host Code Integrity catalog allocations.
+RUN & C:/Windows/System32/sc.exe config WinRM start= demand; \
+    if ($LASTEXITCODE -ne 0) { throw 'WinRM startup configuration failed' }; \
+    & C:/Windows/System32/sc.exe config SSDPSRV start= disabled; \
+    if ($LASTEXITCODE -ne 0) { throw 'SSDP startup configuration failed' }
+
 COPY --from=build C:/solution/common/Build/bin/Release/net9.0/win-x64/publish/Unreal.exe C:/unreal/Unreal.exe
 
 ENV UNREAL_SOURCE="https://github.com/EpicGames/UnrealEngine"
